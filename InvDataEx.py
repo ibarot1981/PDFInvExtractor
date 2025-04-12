@@ -15,7 +15,7 @@ ARCHIVE_DIR = 'files/archive'
 ERROR_DIR = 'files/error'
 OUTPUT_DIR = 'files/output'  # Change this to your desired output folder
 
-# === PROCESSING FUNCTION ===
+# === PDF PROCESSING FUNCTION ===
 def process_pdf(file_path):
     data_rows = []
 
@@ -33,7 +33,7 @@ def process_pdf(file_path):
 
             if not invoice_date:
                 invoice_number = re.search(r"Invoice No\.\s*([A-Z0-9\-]+)", text)
-                invoice_date = re.search(r"Dated\s*:\s*([0-9]{2}-[A-Za-z]{3}-[0-9]{2})", text)
+                invoice_date = re.search(r"Ack Date\s*:\s*([0-9]{2}-[A-Za-z]{3}-[0-9]{2})", text)
                 place_of_delivery = re.search(r"Destination\s*(.*)", text)
                 consignee_match = re.search(r"Consignee \(Ship to\)\n(.*?)\n", text, re.DOTALL)
                 consignee_address_block = re.search(r"Consignee \(Ship to\)\n(.*?)Buyer \(Bill to\)", text, re.DOTALL)
@@ -47,15 +47,14 @@ def process_pdf(file_path):
                 if consignee_address_block:
                     consignee_address = " ".join(consignee_address_block.group(1).splitlines()).strip()
 
-                # Parse month-year for output filename
                 try:
                     dt = datetime.strptime(invoice_date_str, "%d-%b-%y")
-                    month_file = dt.strftime("%b%y")  # e.g., 'Apr25'
+                    month_file = dt.strftime("%b%y")
                 except ValueError:
                     raise ValueError(f"Invalid date format in invoice: {invoice_date_str}")
+
                 output_csv = os.path.join(OUTPUT_DIR, f"{month_file}Invoices.csv")
 
-            # === Robust table parsing ===
             tables = page.extract_tables()
             for table in tables:
                 for i, row in enumerate(table):
@@ -70,7 +69,6 @@ def process_pdf(file_path):
                     rate = row[3].strip().replace(",", "") if isinstance(row[3], str) else ''
                     qty = row[4].strip() if isinstance(row[4], str) else ''
 
-                    # Multi-line description support
                     if i + 1 < len(table):
                         next_row = table[i + 1]
                         if next_row[0] == '' and isinstance(next_row[1], str):
@@ -89,7 +87,6 @@ def process_pdf(file_path):
                         total
                     ])
 
-    # === Save to CSV ===
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     write_header = not os.path.exists(output_csv)
     with open(output_csv, 'a', newline='', encoding='utf-8') as f:
@@ -103,32 +100,48 @@ def process_pdf(file_path):
 
     print(f"✅ Processed and saved to {output_csv}")
 
-# === FILE HANDLER FOR WATCHDOG ===
+# === FILE MOVING WITH TIMESTAMP ===
+def move_file(file_path, target_dir):
+    os.makedirs(target_dir, exist_ok=True)
+    base_name = os.path.basename(file_path)
+    name, ext = os.path.splitext(base_name)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    new_name = f"{name}_{timestamp}{ext}"
+    shutil.move(file_path, os.path.join(target_dir, new_name))
+
+# === FILE HANDLER ===
 class PDFHandler(FileSystemEventHandler):
     def on_created(self, event):
         if event.is_directory or not event.src_path.lower().endswith('.pdf'):
             return
 
-        time.sleep(1)  # brief wait to allow file writing to complete
+        time.sleep(1)
         file_path = event.src_path
+        handle_file(file_path)
 
-        try:
-            process_pdf(file_path)
-            move_file(file_path, ARCHIVE_DIR)
-            print(f"📦 Archived: {file_path}")
-        except Exception as e:
-            print(f"❌ Error: {e}")
-            traceback.print_exc()
-            move_file(file_path, ERROR_DIR)
-            print(f"⚠️ Moved to error folder: {file_path}")
+def handle_file(file_path):
+    try:
+        process_pdf(file_path)
+        move_file(file_path, ARCHIVE_DIR)
+        print(f"📦 Archived: {file_path}")
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        traceback.print_exc()
+        move_file(file_path, ERROR_DIR)
+        print(f"⚠️ Moved to error folder: {file_path}")
 
-def move_file(file_path, target_dir):
-    os.makedirs(target_dir, exist_ok=True)
-    shutil.move(file_path, os.path.join(target_dir, os.path.basename(file_path)))
+# === PROCESS EXISTING FILES ===
+def process_existing_files():
+    for filename in os.listdir(INPUT_DIR):
+        if filename.lower().endswith('.pdf'):
+            file_path = os.path.join(INPUT_DIR, filename)
+            handle_file(file_path)
 
-# === START WATCHING ===
+# === WATCHER ===
 def start_watching():
     os.makedirs(INPUT_DIR, exist_ok=True)
+    process_existing_files()
+
     event_handler = PDFHandler()
     observer = Observer()
     observer.schedule(event_handler, INPUT_DIR, recursive=False)
@@ -142,6 +155,6 @@ def start_watching():
         observer.stop()
     observer.join()
 
-# === ENTRY POINT ===
+# === MAIN ===
 if __name__ == "__main__":
     start_watching()
