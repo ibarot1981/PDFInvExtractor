@@ -1,56 +1,139 @@
 import os
 import shutil
-import pdfplumber
+import time
 import csv
 import re
+import traceback
 from datetime import datetime
+import pdfplumber
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
-import time
 
+# === CONFIGURATION ===
 INPUT_DIR = 'files/input'
 ARCHIVE_DIR = 'files/archive'
 ERROR_DIR = 'files/error'
 OUTPUT_DIR = 'files/output'  # Change this to your desired output folder
 
+# === PROCESSING FUNCTION ===
 def process_pdf(file_path):
-    """
-    Dummy processing function.
-    Replace with your actual logic.
-    Raise an exception if processing fails.
-    """
-    print(f"Processing: {file_path}")
-    if "fail" in os.path.basename(file_path).lower():
-        raise ValueError("Simulated processing failure.")
-    return True
+    data_rows = []
+
+    with pdfplumber.open(file_path) as pdf:
+        invoice_date = None
+        invoice_number = None
+        consignee_name = None
+        consignee_address = ""
+        place_of_delivery = None
+        output_csv = None
+        invoice_date_str = "Unknown"
+
+        for page in pdf.pages:
+            text = page.extract_text()
+
+            if not invoice_date:
+                invoice_number = re.search(r"Invoice No\.\s*([A-Z0-9\-]+)", text)
+                invoice_date = re.search(r"Dated\s*:\s*([0-9]{2}-[A-Za-z]{3}-[0-9]{2})", text)
+                place_of_delivery = re.search(r"Destination\s*(.*)", text)
+                consignee_match = re.search(r"Consignee \(Ship to\)\n(.*?)\n", text, re.DOTALL)
+                consignee_address_block = re.search(r"Consignee \(Ship to\)\n(.*?)Buyer \(Bill to\)", text, re.DOTALL)
+
+                invoice_number = invoice_number.group(1).strip() if invoice_number else "Unknown"
+                invoice_date_str = invoice_date.group(1).strip() if invoice_date else "Unknown"
+                place_of_delivery = place_of_delivery.group(1).strip() if place_of_delivery else "Unknown"
+
+                if consignee_match:
+                    consignee_name = consignee_match.group(1).strip()
+                if consignee_address_block:
+                    consignee_address = " ".join(consignee_address_block.group(1).splitlines()).strip()
+
+                # Parse month-year for output filename
+                try:
+                    dt = datetime.strptime(invoice_date_str, "%d-%b-%y")
+                    month_file = dt.strftime("%b%y")  # e.g., 'Apr25'
+                except ValueError:
+                    raise ValueError(f"Invalid date format in invoice: {invoice_date_str}")
+                output_csv = os.path.join(OUTPUT_DIR, f"{month_file}Invoices.csv")
+
+            # === Robust table parsing ===
+            tables = page.extract_tables()
+            for table in tables:
+                for i, row in enumerate(table):
+                    if not row or len(row) < 5:
+                        continue
+                    if not isinstance(row[0], str) or not row[0].strip().isdigit():
+                        continue
+
+                    item_no = row[0].strip()
+                    description = row[1].strip() if isinstance(row[1], str) else ''
+                    total = row[2].strip().replace(",", "") if isinstance(row[2], str) else ''
+                    rate = row[3].strip().replace(",", "") if isinstance(row[3], str) else ''
+                    qty = row[4].strip() if isinstance(row[4], str) else ''
+
+                    # Multi-line description support
+                    if i + 1 < len(table):
+                        next_row = table[i + 1]
+                        if next_row[0] == '' and isinstance(next_row[1], str):
+                            description += ' ' + next_row[1].strip()
+
+                    data_rows.append([
+                        invoice_date_str,
+                        invoice_number,
+                        consignee_name,
+                        consignee_address,
+                        place_of_delivery,
+                        item_no,
+                        description,
+                        qty,
+                        rate,
+                        total
+                    ])
+
+    # === Save to CSV ===
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    write_header = not os.path.exists(output_csv)
+    with open(output_csv, 'a', newline='', encoding='utf-8') as f:
+        writer = csv.writer(f)
+        if write_header:
+            writer.writerow([
+                "Invoice Date", "Invoice Number", "Consignee Name", "Consignee Address",
+                "Place of Delivery", "Item", "Item Description", "Qty", "Rate", "Total"
+            ])
+        writer.writerows(data_rows)
+
+    print(f"✅ Processed and saved to {output_csv}")
+
+# === FILE HANDLER FOR WATCHDOG ===
+class PDFHandler(FileSystemEventHandler):
+    def on_created(self, event):
+        if event.is_directory or not event.src_path.lower().endswith('.pdf'):
+            return
+
+        time.sleep(1)  # brief wait to allow file writing to complete
+        file_path = event.src_path
+
+        try:
+            process_pdf(file_path)
+            move_file(file_path, ARCHIVE_DIR)
+            print(f"📦 Archived: {file_path}")
+        except Exception as e:
+            print(f"❌ Error: {e}")
+            traceback.print_exc()
+            move_file(file_path, ERROR_DIR)
+            print(f"⚠️ Moved to error folder: {file_path}")
 
 def move_file(file_path, target_dir):
     os.makedirs(target_dir, exist_ok=True)
     shutil.move(file_path, os.path.join(target_dir, os.path.basename(file_path)))
 
-class PDFHandler(FileSystemEventHandler):
-    def on_created(self, event):
-        if event.is_directory:
-            return
-
-        if event.src_path.lower().endswith('.pdf'):
-            time.sleep(1)  # small delay to avoid reading incomplete files
-            try:
-                process_pdf(event.src_path)
-                move_file(event.src_path, ARCHIVE_DIR)
-                print(f"Archived: {event.src_path}")
-            except Exception as e:
-                print(f"Error processing {event.src_path}: {e}")
-                move_file(event.src_path, ERROR_DIR)
-                print(f"Moved to error: {event.src_path}")
-
-if __name__ == "__main__":
+# === START WATCHING ===
+def start_watching():
     os.makedirs(INPUT_DIR, exist_ok=True)
     event_handler = PDFHandler()
     observer = Observer()
     observer.schedule(event_handler, INPUT_DIR, recursive=False)
     observer.start()
-    print(f"Watching directory: {INPUT_DIR} for new PDF files...")
+    print(f"👀 Watching directory: {INPUT_DIR}...")
 
     try:
         while True:
@@ -58,3 +141,7 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         observer.stop()
     observer.join()
+
+# === ENTRY POINT ===
+if __name__ == "__main__":
+    start_watching()
