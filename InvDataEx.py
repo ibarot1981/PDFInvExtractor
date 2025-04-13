@@ -13,82 +13,128 @@ from watchdog.events import FileSystemEventHandler
 INPUT_DIR = 'files/input'
 ARCHIVE_DIR = 'files/archive'
 ERROR_DIR = 'files/error'
-OUTPUT_DIR = 'files/output'  # Change this to your desired output folder
+OUTPUT_DIR = 'files/output'
 
 # === PDF PROCESSING FUNCTION ===
 def process_pdf(file_path):
-    data_rows = []
-
     with pdfplumber.open(file_path) as pdf:
-        invoice_date = None
-        invoice_number = None
-        consignee_name = None
-        consignee_address = ""
-        place_of_delivery = None
-        output_csv = None
-        invoice_date_str = "Unknown"
-
+        lines = []
         for page in pdf.pages:
-            text = page.extract_text()
+            lines.extend(page.extract_text().splitlines())
 
-            if not invoice_date:
-                invoice_number = re.search(r"Invoice No\.\s*([A-Z0-9\-]+)", text)
-                invoice_date = re.search(r"Ack Date\s*:\s*([0-9]{2}-[A-Za-z]{3}-[0-9]{2})", text)
-                place_of_delivery = re.search(r"Destination\s*(.*)", text)
-                consignee_match = re.search(r"Consignee \(Ship to\)\n(.*?)\n", text, re.DOTALL)
-                consignee_address_block = re.search(r"Consignee \(Ship to\)\n(.*?)Buyer \(Bill to\)", text, re.DOTALL)
+    # --- Header parsing ---
+    invoice_number = ""
+    invoice_date_str = ""
+    consignee_name = ""
+    consignee_address = []
 
-                invoice_number = invoice_number.group(1).strip() if invoice_number else "Unknown"
-                invoice_date_str = invoice_date.group(1).strip() if invoice_date else "Unknown"
-                place_of_delivery = place_of_delivery.group(1).strip() if place_of_delivery else "Unknown"
+    in_consignee_block = False
+    consignee_block_started = False
 
-                if consignee_match:
-                    consignee_name = consignee_match.group(1).strip()
-                if consignee_address_block:
-                    consignee_address = " ".join(consignee_address_block.group(1).splitlines()).strip()
+    place_of_delivery = ""
 
-                try:
-                    dt = datetime.strptime(invoice_date_str, "%d-%b-%y")
-                    month_file = dt.strftime("%b%y")
-                except ValueError:
-                    raise ValueError(f"Invalid date format in invoice: {invoice_date_str}")
+    for idx, line in enumerate(lines):
+        # temp block
+        if "Consignee" in line:
+            print(f"\n🟡 Found line {idx}: {line}")
+            print("🔍 Lines around this point:")
+            for j in range(max(idx-2, 0), min(idx+10, len(lines))):
+                print(f"{j}: {lines[j]}")
+        # temp block ends
 
-                output_csv = os.path.join(OUTPUT_DIR, f"{month_file}Invoices.csv")
+        line = line.strip()
 
-            tables = page.extract_tables()
-            for table in tables:
-                for i, row in enumerate(table):
-                    if not row or len(row) < 5:
-                        continue
-                    if not isinstance(row[0], str) or not row[0].strip().isdigit():
-                        continue
+        # Look for the line with invoice number and date
+        if not invoice_number and re.search(r"SC\d{5}-\d{2}-\d{2}", line):
+            match = re.search(r"(SC\d{5}-\d{2}-\d{2})", line)
+            if match:
+                invoice_number = match.group(1)
 
-                    item_no = row[0].strip()
-                    description = row[1].strip() if isinstance(row[1], str) else ''
-                    total = row[2].strip().replace(",", "") if isinstance(row[2], str) else ''
-                    rate = row[3].strip().replace(",", "") if isinstance(row[3], str) else ''
-                    qty = row[4].strip() if isinstance(row[4], str) else ''
+            date_match = re.findall(r"\b\d{1,2}-[A-Za-z]{3}-\d{2}\b", line)
+            if date_match:
+                invoice_date_str = date_match[-1]
 
-                    if i + 1 < len(table):
-                        next_row = table[i + 1]
-                        if next_row[0] == '' and isinstance(next_row[1], str):
-                            description += ' ' + next_row[1].strip()
+        # Place of Supply
+        if "Place of Supply" in line:
+            place_match = re.search(r"Place of Supply\s*:\s*(.+)", line)
+            if place_match:
+                place_of_delivery = place_match.group(1).strip()
 
-                    data_rows.append([
-                        invoice_date_str,
-                        invoice_number,
-                        consignee_name,
-                        consignee_address,
-                        place_of_delivery,
-                        item_no,
-                        description,
-                        qty,
-                        rate,
-                        total
-                    ])
+        # NEW: Consignee (Ship to) handling
+        if "Consignee (Ship to)" in line:
+            # Line 1: Name (split from extra fields)
+            name_line = lines[idx + 1].strip()
+            consignee_name = name_line.split("Dispatch Doc No.")[0].strip()
 
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
+            # Prevent duplicate lines and limit to reasonable number of lines
+            seen_lines = set()
+            for i in range(idx + 2, idx + 10):  # scan up to 8 lines max
+                if i >= len(lines):
+                    break
+                address_line = lines[i].strip()
+                if any(x in address_line for x in [
+                    "Buyer (Bill to)", "Dispatch Doc No.", "Delivery Note Date",
+                    "Dispatched through", "Destination", "Terms of Delivery"
+                ]):
+                    break
+                # Avoid duplicates
+                if address_line and address_line not in seen_lines:
+                    consignee_address.append(address_line)
+                    seen_lines.add(address_line)
+
+    consignee_address_str = " ".join(consignee_address).strip()
+
+    # --- Prepare for CSV ---
+    try:
+        invoice_date_obj = datetime.strptime(invoice_date_str, "%d-%b-%y")
+    except ValueError:
+        raise ValueError(f"Invalid invoice date: '{invoice_date_str}'")
+    month_file = invoice_date_obj.strftime("%b%y")
+    output_csv = os.path.join(OUTPUT_DIR, f"{month_file}Invoices.csv")
+
+    # --- Line item parsing ---
+    data_rows = []
+    item_pattern = re.compile(r"^(\d+)\s+(.*?)\s+(\d{5,})\s+(\d+)\s+NOS\s+([\d,]+\.\d{2})\s+NOS\s+([\d,]+\.\d{2})$")
+
+    current_item = None
+    for line in lines:
+        line = line.strip()
+        match = item_pattern.match(line)
+        if match:
+            if current_item:
+                data_rows.append(current_item)
+            item_no = match.group(1)
+            base_desc = match.group(2)
+            qty = match.group(4)
+            rate = match.group(5).replace(",", "")
+            total = match.group(6).replace(",", "")
+            current_item = [
+                invoice_date_str,
+                invoice_number,
+                consignee_name,
+                consignee_address_str,
+                place_of_delivery,
+                item_no,
+                base_desc,
+                qty,
+                rate,
+                total
+            ]
+        elif current_item:
+            current_item[6] += " " + line  # Append continuation to description
+
+    if current_item:
+        data_rows.append(current_item)
+    
+    print("Invoice Number:", invoice_number)
+    print("Invoice Date:", invoice_date_str)
+    print("Consignee Name:", consignee_name)
+    print("Consignee Address:", consignee_address)
+    print("Place of Delivery:", place_of_delivery)
+    
+    # --- Write to CSV ---
     write_header = not os.path.exists(output_csv)
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
     with open(output_csv, 'a', newline='', encoding='utf-8') as f:
         writer = csv.writer(f)
         if write_header:
@@ -98,7 +144,7 @@ def process_pdf(file_path):
             ])
         writer.writerows(data_rows)
 
-    print(f"✅ Processed and saved to {output_csv}")
+    print(f"✅ Parsed and appended to {output_csv}")
 
 # === FILE MOVING WITH TIMESTAMP ===
 def move_file(file_path, target_dir):
