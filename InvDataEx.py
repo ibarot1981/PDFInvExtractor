@@ -126,12 +126,14 @@ def process_pdf(file_path):
     item_pattern = re.compile(r"^(\d+)\s+(.*?)\s+(\d{5,})\s+(\d+)\s+NOS\s+([\d,]+\.\d{2})\s+NOS\s+([\d,]+\.\d{2})$")
 
     current_item = None
+    line_items = []
+
     for line in lines:
         line = line.strip()
         match = item_pattern.match(line)
         if match:
             if current_item:
-                data_rows.append(current_item)
+                line_items.append(current_item)
             item_no = match.group(1)
             base_desc = match.group(2)
             qty = match.group(4)
@@ -141,7 +143,7 @@ def process_pdf(file_path):
                 invoice_date_str,
                 invoice_number,
                 consignee_name,
-                consignee_address_str,
+                cleaned_address,
                 place_of_delivery,
                 item_no,
                 base_desc,
@@ -150,10 +152,25 @@ def process_pdf(file_path):
                 total
             ]
         elif current_item:
-            current_item[6] += " " + line  # Append continuation to description
+            # Append continuation of description
+            current_item[6] += " " + line
 
+    # Final push
     if current_item:
-        data_rows.append(current_item)
+        line_items.append(current_item)
+
+    # Deduplicate items
+    unique_items = []
+    seen = set()
+    for item in line_items:
+        row_string = "|".join(str(x).strip() for x in item)
+        if row_string not in seen:
+            seen.add(row_string)
+            unique_items.append(item)
+            
+    print(f"🧾 Total line items parsed: {len(unique_items)}")
+
+    data_rows.extend(unique_items)
     
     print("Invoice Number:", invoice_number)
     print("Invoice Date:", invoice_date_str)
