@@ -8,6 +8,7 @@ from datetime import datetime
 import pdfplumber
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
+from collections import OrderedDict
 
 # === CONFIGURATION ===
 INPUT_DIR = 'files/input'
@@ -67,20 +68,48 @@ def process_pdf(file_path):
             consignee_name = name_line.split("Dispatch Doc No.")[0].strip()
 
             # Prevent duplicate lines and limit to reasonable number of lines
-            seen_lines = set()
-            for i in range(idx + 2, idx + 10):  # scan up to 8 lines max
-                if i >= len(lines):
+            # Initialize
+            consignee_name = ""
+            consignee_address = []
+            consignee_start = None
+            stop_keywords = [
+                "Buyer (Bill to)", "Terms of Delivery", "Dispatched through", 
+                "Dispatch Doc No.", "Delivery Note Date", "Destination", "GSTIN", "State Name", "E-Mail"
+            ]
+
+            # Step 1: Locate 'Consignee (Ship to)' line
+            for i, line in enumerate(lines):
+                if "Consignee (Ship to)" in line:
+                    consignee_start = i
                     break
-                address_line = lines[i].strip()
-                if any(x in address_line for x in [
-                    "Buyer (Bill to)", "Dispatch Doc No.", "Delivery Note Date",
-                    "Dispatched through", "Destination", "Terms of Delivery"
-                ]):
-                    break
-                # Avoid duplicates
-                if address_line and address_line not in seen_lines:
-                    consignee_address.append(address_line)
-                    seen_lines.add(address_line)
+
+            # Step 2: Parse next lines for name and address
+            if consignee_start is not None:
+                # The line immediately after usually contains name + extra text
+                line_after = lines[consignee_start + 1].strip()
+                
+                # Use regex to extract only the name (before any keywords)
+                split_line = re.split(r"Dispatch Doc No\.|Delivery Note Date|Dispatched through|Destination|Terms of Delivery|GSTIN|State Name|E-Mail", line_after)
+                consignee_name = split_line[0].strip()
+
+                # Collect address lines until a stop keyword is hit
+                for line in lines[consignee_start + 2 : consignee_start + 12]:
+                    clean_line = line.strip()
+                    if not clean_line:
+                        continue
+                    if any(kw in clean_line for kw in stop_keywords):
+                        break
+                    consignee_address.append(clean_line)
+
+            # Clean and join the address
+            cleaned_address = ", ".join(dict.fromkeys(consignee_address))  # removes duplicates while preserving order
+    # temp
+    #cleaned_address = ", ".join(OrderedDict.fromkeys(consignee_address))
+    print("📍 Consignee lines start at:", consignee_start)
+    print("🏷️  Consignee Name:", consignee_name)
+    print("📋 Raw collected address lines:", consignee_address)
+    print("🧾 Cleaned Consignee Address:", cleaned_address)
+    # temp ends
 
     consignee_address_str = " ".join(consignee_address).strip()
 
