@@ -19,7 +19,8 @@ def process_pdf(file_path):
     with pdfplumber.open(file_path) as pdf:
         lines = []
         for page in pdf.pages:
-            lines.extend(page.extract_text().splitlines())
+            page_text = page.extract_text().splitlines()
+            lines.extend(page_text)
 
     invoice_number = ""
     invoice_date_str = ""
@@ -72,85 +73,96 @@ def process_pdf(file_path):
     month_file = invoice_date_obj.strftime("%b%y")
     output_csv = os.path.join(OUTPUT_DIR, f"{month_file}Invoices.csv")
 
-    # === LINE ITEM PARSING ===
-    #item_pattern = re.compile(r"^(\d+)\s+(.*?)\s+(\d{5,})\s+(\d+)\s+NOS\s+([\d,]+\.\d{2})\s+NOS\s+([\d,]+\.\d{2})$")
-    item_pattern = re.compile(r"^(\d+)\s+(.+?)\s+(\d{5,})\s+(\d+)\s+NOS\s+([\d,.]+)\s+NOS\s+([\d,.]+)$")
-
-    #service_item_pattern = re.compile(r"^(\d+)\s+(Local Repairs.*?)\s+(\d{5,})\s+([\d,]+\.\d{2})$")
-    service_item_pattern = re.compile(r"^(\d+)\s+(Local Repairs.*?)\s+(\d{5,})(?:\s+([\d,.]+))?$")
-
-    summary_keywords = [
-        "Total", "Output CGST", "Output SGST", "Amount Chargeable",
-        "HSN/SAC", "Taxable", "Company", "Declaration", "Terms & Conditions",
-        "INR", "Authorised Signatory"
-    ]
-
+    # === Line item parsing ===
     data_rows = []
     current_item = None
-    collecting_service = False
-    service_item_no = ""
-    service_description_lines = []
-    service_amount = ""
+    item_no = ""
+    description_lines = []
+    qty = ""
+    rate = ""
+    total = ""
+    in_summary_section = False
 
-    for line in lines:
-        # temp
-        print("🔍 Scanning line:", line)
-        #
-        line = line.strip()
+    summary_triggers = [
+        "output cgst", "output sgst", "igst", "tax amount", "amount chargeable",
+        "bank", "authorised signatory", "terms & conditions", "declaration",
+        "subject to", "warranty", "company", "total value", "value rate amount"
+    ]
 
-        if any(kw.lower() in line.lower() for kw in summary_keywords):
-            # Don't break — just skip summary/footer lines
+    ignore_lines = [
+        "sl description", "hsn/sac", "quantity", "rate", "per", "amount"
+    ]
+
+    for idx, line in enumerate(lines):
+        clean = line.strip()
+
+        # Skip empty lines
+        if not clean:
             continue
 
-
-        # Match standard items
-        match = item_pattern.match(line)
-        if match:
-            if current_item:
-                data_rows.append(current_item)
-            item_no = match.group(1)
-            base_desc = match.group(2)
-            qty = match.group(4)
-            rate = match.group(5).replace(",", "")
-            total = match.group(6).replace(",", "")
-            current_item = [
-                invoice_date_str, invoice_number, consignee_name,
-                cleaned_address, place_of_delivery,
-                item_no, base_desc, qty, rate, total
-            ]
+        # Skip page headers
+        if any(header in clean.lower() for header in ignore_lines):
             continue
 
-        # Continuation of standard item
-        if current_item:
-            current_item[6] += " " + line
+        # Detect summary/footer section
+        if any(word in clean.lower() for word in summary_triggers):
+            in_summary_section = True
             continue
 
-        # Match new-style service item
-        match = service_item_pattern.match(line)
-        if match:
-            collecting_service = True
-            service_item_no = match.group(1)
-            service_description_lines = [match.group(2)]
-            service_amount = match.group(4).replace(",", "")
+        if in_summary_section:
             continue
 
-        # Continue service item block
-        if collecting_service:
-            if re.search(r"\d{1,3}(?:,\d{3})*\.\d{2}", line):
-                service_amount = re.search(r"\d{1,3}(?:,\d{3})*\.\d{2}", line).group().replace(",", "")
+        # Detect start of a new item
+        new_item_match = re.match(r"^(\d{1,3})\s+(.*)", clean)
+        if new_item_match:
+            # Finalize current item if present
+            if item_no and description_lines:
+                data_rows.append([
+                    invoice_date_str, invoice_number, consignee_name,
+                    cleaned_address, place_of_delivery,
+                    item_no, " ".join(description_lines).strip(),
+                    qty, rate, total
+                ])
+            item_no = new_item_match.group(1)
+            rest = new_item_match.group(2)
+
+            # Detect standard item
+            std_match = re.match(r"(.*?)\s+(\d{5,})\s+(\d+)\s+NOS\s+([\d,]+\.\d{2})\s+NOS\s+([\d,]+\.\d{2})", rest)
+            svc_match = re.match(r"(.*?)\s+(\d{5,})\s+([\d,]+\.\d{2})", rest)
+
+            if std_match:
+                description_lines = [std_match.group(1)]
+                qty = std_match.group(3)
+                rate = std_match.group(4).replace(",", "")
+                total = std_match.group(5).replace(",", "")
+            elif svc_match:
+                description_lines = [svc_match.group(1)]
+                qty = ""
+                rate = ""
+                total = svc_match.group(3).replace(",", "")
             else:
-                service_description_lines.append(line)
-    # Temp
-    print(f"✅ Extracted {len(data_rows)} line items")
-    for row in data_rows:
-        print("🧾 Row:", row)
-    # End Temp
+                description_lines = [rest]
+                qty = ""
+                rate = ""
+                total = ""
+            continue
 
-    # In case last item wasn't appended
-    if current_item:
-        data_rows.append(current_item)
+        # Append extra description lines
+        if item_no:
+            if re.match(r"^\d{5,}", clean):  # Skip HSN-style summary lines
+                continue
+            description_lines.append(clean)
 
-    # === WRITE TO CSV ===
+    # Final item
+    if item_no and description_lines:
+        data_rows.append([
+            invoice_date_str, invoice_number, consignee_name,
+            cleaned_address, place_of_delivery,
+            item_no, " ".join(description_lines).strip(),
+            qty, rate, total
+        ])
+
+    # === Write to CSV ===
     write_header = not os.path.exists(output_csv)
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     with open(output_csv, 'a', newline='', encoding='utf-8') as f:
@@ -162,7 +174,7 @@ def process_pdf(file_path):
             ])
         writer.writerows(data_rows)
 
-    print(f"✅ Parsed and appended to {output_csv}")
+    print(f"✅ Parsed {len(data_rows)} item(s) from: {os.path.basename(file_path)}")
 
 def move_file(file_path, target_dir):
     os.makedirs(target_dir, exist_ok=True)
@@ -183,18 +195,15 @@ def handle_file(file_path):
     try:
         process_pdf(file_path)
         move_file(file_path, ARCHIVE_DIR)
-        print(f"📦 Archived: {file_path}")
     except Exception as e:
         print(f"❌ Error: {e}")
         traceback.print_exc()
         move_file(file_path, ERROR_DIR)
-        print(f"⚠️ Moved to error folder: {file_path}")
 
 def process_existing_files():
     for filename in os.listdir(INPUT_DIR):
         if filename.lower().endswith('.pdf'):
-            file_path = os.path.join(INPUT_DIR, filename)
-            handle_file(file_path)
+            handle_file(os.path.join(INPUT_DIR, filename))
 
 def start_watching():
     os.makedirs(INPUT_DIR, exist_ok=True)
