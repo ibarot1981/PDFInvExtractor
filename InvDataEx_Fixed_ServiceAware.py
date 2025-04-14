@@ -75,7 +75,8 @@ def process_pdf(file_path):
 
     # === Line item parsing ===
     data_rows = []
-    current_item = None
+    last_flushed_item = None
+    seen_items = set()
     item_no = ""
     description_lines = []
     qty = ""
@@ -84,84 +85,67 @@ def process_pdf(file_path):
     in_summary_section = False
 
     summary_triggers = [
-        "output cgst", "output sgst", "igst", "tax amount", "amount chargeable",
+        "output cgst", "output sgst", "igst", "amount chargeable", "tax amount", "total", "₹",
         "bank", "authorised signatory", "terms & conditions", "declaration",
-        "subject to", "warranty", "company", "total value", "value rate amount"
+        "subject to", "warranty", "company"
     ]
 
-    ignore_lines = [
-        "sl description", "hsn/sac", "quantity", "rate", "per", "amount"
-    ]
+    def is_summary_line(line):
+        return any(kw in line.lower() for kw in summary_triggers)
+
+    def flush_item():
+        nonlocal last_flushed_item
+        if item_no and description_lines and item_no != last_flushed_item:
+            data_rows.append([
+                invoice_date_str, invoice_number, consignee_name,
+                cleaned_address, place_of_delivery,
+                item_no, " ".join(description_lines).strip(),
+                qty, rate, total
+            ])
+            last_flushed_item = item_no
 
     for idx, line in enumerate(lines):
         clean = line.strip()
 
-        # Skip empty lines
         if not clean:
             continue
 
-        # Skip page headers
-        if any(header in clean.lower() for header in ignore_lines):
-            continue
+        if is_summary_line(clean):
+            flush_item()
+            break
 
-        # Detect summary/footer section
-        if any(word in clean.lower() for word in summary_triggers):
-            in_summary_section = True
-            continue
+        parts = clean.split(maxsplit=1)
+        if len(parts) >= 2 and parts[0].isdigit():
+            # Flush previous
+            flush_item()
 
-        if in_summary_section:
-            continue
+            item_no = parts[0]
+            rest = parts[1]
+            description_lines = []
+            qty = rate = total = ""
 
-        # Detect start of a new item
-        new_item_match = re.match(r"^(\d{1,3})\s+(.*)", clean)
-        if new_item_match:
-            # Finalize current item if present
-            if item_no and description_lines:
-                data_rows.append([
-                    invoice_date_str, invoice_number, consignee_name,
-                    cleaned_address, place_of_delivery,
-                    item_no, " ".join(description_lines).strip(),
-                    qty, rate, total
-                ])
-            item_no = new_item_match.group(1)
-            rest = new_item_match.group(2)
+            std = re.match(r"(.*?)\s+(\d{5,})\s+(\d+)\s+NOS\s+([\d,.]+)\s+NOS\s+([\d,.]+)", rest)
+            svc = re.match(r"(.*?)\s+(\d{5,})\s+([\d,.]+)", rest)
 
-            # Detect standard item
-            std_match = re.match(r"(.*?)\s+(\d{5,})\s+(\d+)\s+NOS\s+([\d,]+\.\d{2})\s+NOS\s+([\d,]+\.\d{2})", rest)
-            svc_match = re.match(r"(.*?)\s+(\d{5,})\s+([\d,]+\.\d{2})", rest)
-
-            if std_match:
-                description_lines = [std_match.group(1)]
-                qty = std_match.group(3)
-                rate = std_match.group(4).replace(",", "")
-                total = std_match.group(5).replace(",", "")
-            elif svc_match:
-                description_lines = [svc_match.group(1)]
+            if std:
+                description_lines = [std.group(1)]
+                qty = std.group(3)
+                rate = std.group(4).replace(",", "")
+                total = std.group(5).replace(",", "")
+            elif svc:
+                description_lines = [svc.group(1)]
                 qty = ""
                 rate = ""
-                total = svc_match.group(3).replace(",", "")
+                total = svc.group(3).replace(",", "")
             else:
                 description_lines = [rest]
-                qty = ""
-                rate = ""
-                total = ""
-            continue
+        else:
+            # Continuation
+            if item_no:
+                description_lines.append(clean)
 
-        # Append extra description lines
-        if item_no:
-            if re.match(r"^\d{5,}", clean):  # Skip HSN-style summary lines
-                continue
-            description_lines.append(clean)
-
-    # Final item
-    if item_no and description_lines:
-        data_rows.append([
-            invoice_date_str, invoice_number, consignee_name,
-            cleaned_address, place_of_delivery,
-            item_no, " ".join(description_lines).strip(),
-            qty, rate, total
-        ])
-
+    flush_item()
+    
     # === Write to CSV ===
     write_header = not os.path.exists(output_csv)
     os.makedirs(OUTPUT_DIR, exist_ok=True)
