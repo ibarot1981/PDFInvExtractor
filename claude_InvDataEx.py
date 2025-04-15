@@ -2,9 +2,14 @@ import os
 import csv
 import re
 import traceback
+import time
+import signal
+import sys
 from datetime import datetime
 import pdfplumber
 import shutil
+from watchdog.observers import Observer
+from watchdog.events import FileSystemEventHandler
 
 # === CONFIGURATION ===
 INPUT_DIR = 'files/input'
@@ -37,6 +42,12 @@ def extract_header_from_pdf(file_path):
         'destination': ''
     }
     
+    # Print all extracted lines for debugging
+    print("\n--- Raw PDF Content ---")
+    for i, line in enumerate(lines):
+        print(f"Line {i}: {line}")
+    print("----------------------\n")
+    
     # Find invoice number
     for idx, line in enumerate(lines):
         if 'SC' in line and re.search(r'SC\d{5}-\d{2}-\d{2}', line):
@@ -45,13 +56,41 @@ def extract_header_from_pdf(file_path):
                 header_data['invoice_number'] = match.group(1)
                 break
     
-    # Find invoice date
+    # Multiple date extraction approaches
+    # Approach 1: Look for "Dated" followed by date
     for idx, line in enumerate(lines):
         if 'Dated' in line:
             date_match = re.search(r'Dated\s+(\d{1,2}-[A-Za-z]{3}-\d{2})', line)
             if date_match:
                 header_data['invoice_date'] = date_match.group(1)
+                print(f"Found date via 'Dated' pattern: {header_data['invoice_date']}")
                 break
+    
+    # Approach 2: If above fails, look for date pattern anywhere near relevant fields
+    if not header_data['invoice_date']:
+        for idx, line in enumerate(lines):
+            # Look for date pattern in the line
+            date_match = re.search(r'(\d{1,2}-[A-Za-z]{3}-\d{2})', line)
+            if date_match and not line.startswith('Ack Date'):  # Avoid Ack Date
+                # Make sure it's not part of the acknowledgment date
+                if 'Ack Date' not in line:
+                    header_data['invoice_date'] = date_match.group(1)
+                    print(f"Found date via general pattern: {header_data['invoice_date']}")
+                    break
+    
+    # Approach 3: Look specifically near the invoice number and bill of lading
+    if not header_data['invoice_date']:
+        for idx, line in enumerate(lines):
+            if 'Bill of Lading' in line or 'LR-RR No' in line or 'Invoice No' in line:
+                # Check this line and next few lines
+                for i in range(idx, min(idx+5, len(lines))):
+                    date_match = re.search(r'(\d{1,2}-[A-Za-z]{3}-\d{2})', lines[i])
+                    if date_match:
+                        header_data['invoice_date'] = date_match.group(1)
+                        print(f"Found date near invoice/bill of lading: {header_data['invoice_date']}")
+                        break
+                if header_data['invoice_date']:
+                    break
     
     # Find destination
     for idx, line in enumerate(lines):
@@ -260,18 +299,68 @@ def process_existing_files():
     else:
         print("📭 No PDF files found in input directory")
 
+# === WATCHDOG EVENT HANDLER ===
+class PDFHandler(FileSystemEventHandler):
+    def on_created(self, event):
+        # Only process files, not directories
+        if not event.is_directory and event.src_path.lower().endswith('.pdf'):
+            print(f"🔔 New file detected: {event.src_path}")
+            
+            # Wait a moment to ensure the file is completely written
+            # Some applications may write files in chunks
+            time.sleep(1)
+            
+            # Check if file still exists (it might have been moved by another process)
+            if os.path.exists(event.src_path):
+                print(f"📄 Processing: {os.path.basename(event.src_path)}")
+                handle_file(event.src_path)
+            else:
+                print(f"⚠️ File no longer exists: {event.src_path}")
+
+# === SIGNAL HANDLER FOR GRACEFUL EXIT ===
+def signal_handler(sig, frame):
+    print("\n🛑 Stopping PDF invoice monitoring (Ctrl+C pressed)")
+    observer.stop()
+    observer.join()
+    sys.exit(0)
+
 # === MAIN ===
 if __name__ == "__main__":
     # Ensure directories exist
     for directory in [INPUT_DIR, ARCHIVE_DIR, ERROR_DIR, OUTPUT_DIR]:
         os.makedirs(directory, exist_ok=True)
     
-    print("🚀 PDF Invoice Header Extractor")
+    print("🚀 PDF Invoice Header Extractor with Watchdog")
     print(f"📁 Input Directory: {INPUT_DIR}")
     print(f"📁 Output Directory: {OUTPUT_DIR}")
     print(f"📁 Archive Directory: {ARCHIVE_DIR}")
     print(f"📁 Error Directory: {ERROR_DIR}")
     
+    # Process any existing files first
     process_existing_files()
     
-    print("✨ Processing complete!")
+    # Set up the watchdog observer
+    observer = Observer()
+    event_handler = PDFHandler()
+    observer.schedule(event_handler, INPUT_DIR, recursive=False)
+    
+    # Register signal handler for Ctrl+C
+    signal.signal(signal.SIGINT, signal_handler)
+    
+    # Start the observer
+    print("\n👀 Watching for new PDF files in input directory...")
+    print("⌨️  Press Ctrl+C to stop monitoring\n")
+    
+    observer.start()
+    
+    try:
+        # Keep the main thread alive
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        # This is a backup in case the signal handler doesn't catch it
+        print("\n🛑 Stopping PDF invoice monitoring (Ctrl+C pressed)")
+        observer.stop()
+    
+    observer.join()
+    print("✨ Monitoring stopped. Goodbye!")
