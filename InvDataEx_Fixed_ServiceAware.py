@@ -16,149 +16,186 @@ ERROR_DIR = 'files/error'
 OUTPUT_DIR = 'files/output'
 
 def process_pdf(file_path):
+    import pdfplumber
+    import csv
+    import os
+    import re
+    from datetime import datetime
+
     with pdfplumber.open(file_path) as pdf:
-        lines = []
+        text = ""
         for page in pdf.pages:
-            page_text = page.extract_text().splitlines()
-            lines.extend(page_text)
+            page_text = page.extract_text()
+            if page_text and "TAX INVOICE" in page_text:
+                text = page_text
+                break
 
-    invoice_number = ""
-    invoice_date_str = ""
-    consignee_name = ""
-    consignee_address = []
-    place_of_delivery = ""
+    if not text:
+        raise ValueError("No valid invoice page found.")
 
-    stop_keywords = [
-        "Buyer (Bill to)", "Terms of Delivery", "Dispatched through", 
-        "Dispatch Doc No.", "Delivery Note Date", "Destination", "GSTIN", "State Name", "E-Mail"
-    ]
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    fields = {
+        "Invoice Number": "",
+        "Invoice Date": "",
+        "IRN": "",
+        "Ack No": "",
+        "Ack Date": "",
+        "e-Way Bill No": "",
+        "Dispatch Mode": "",
+        "Motor Vehicle No": "",
+        "Destination": "",
+        "Delivery Note Date": "",
+        "Buyer's Order No": "",
 
-    for idx, line in enumerate(lines):
-        line = line.strip()
-        if not invoice_number and re.search(r"SC\d{5}-\d{2}-\d{2}", line):
+        "Consignee Name": "",
+        "Consignee Address": "",
+        "Consignee GSTIN": "",
+        "Consignee State Name": "",
+        "Consignee State Code": "",
+
+        "Buyer Name": "",
+        "Buyer Address": "",
+        "Buyer GSTIN": "",
+        "Buyer State Name": "",
+        "Buyer State Code": "",
+        "Place of Supply": ""
+    }
+
+    def find_value(label, offset=0, after=True):
+        for i, line in enumerate(lines):
+            if label in line:
+                idx = i + offset if after else i
+                if 0 <= idx < len(lines):
+                    return lines[idx].strip()
+        return ""
+
+    # === General Fields ===
+    for i, line in enumerate(lines):
+        if not fields["IRN"] and line.startswith("IRN"):
+            fields["IRN"] = line.split("IRN", 1)[-1].strip(": ").strip()
+
+        if not fields["Ack No"] and line.startswith("Ack No"):
+            fields["Ack No"] = line.split("Ack No.", 1)[-1].strip()
+
+        if not fields["Ack Date"] and "Ack Date" in line:
+            fields["Ack Date"] = line.split("Ack Date", 1)[-1].strip(": ").strip()
+
+        if not fields["Invoice Number"] and "Invoice No." in line:
             match = re.search(r"(SC\d{5}-\d{2}-\d{2})", line)
             if match:
-                invoice_number = match.group(1)
-            date_match = re.findall(r"\b\d{1,2}-[A-Za-z]{3}-\d{2}\b", line)
-            if date_match:
-                invoice_date_str = date_match[-1]
+                fields["Invoice Number"] = match.group(1)
 
-        if "Place of Supply" in line:
-            place_match = re.search(r"Place of Supply\s*:\s*(.+)", line)
-            if place_match:
-                place_of_delivery = place_match.group(1).strip()
+        if not fields["e-Way Bill No"] and "e-Way Bill No." in line:
+            parts = line.split()
+            for p in parts:
+                if p.isdigit() and len(p) >= 10:
+                    fields["e-Way Bill No"] = p
+                    break
 
-        if "Consignee (Ship to)" in line:
-            consignee_start = idx
-            break
-    else:
-        consignee_start = None
+        if not fields["Dispatch Mode"] and "Dispatched through" in line:
+            fields["Dispatch Mode"] = find_value("Dispatched through", offset=1)
 
-    if consignee_start is not None:
-        line_after = lines[consignee_start + 1].strip()
-        split_line = re.split(r"Dispatch Doc No\.|Delivery Note Date|Dispatched through|Destination|Terms of Delivery|GSTIN|State Name|E-Mail", line_after)
-        consignee_name = split_line[0].strip()
-        for line in lines[consignee_start + 2 : consignee_start + 12]:
-            clean_line = line.strip()
-            if not clean_line or any(kw in clean_line for kw in stop_keywords):
+        if not fields["Motor Vehicle No"] and "Motor Vehicle No" in line:
+            fields["Motor Vehicle No"] = find_value("Motor Vehicle No", offset=1)
+
+        if not fields["Destination"] and "Destination" in line:
+            fields["Destination"] = find_value("Destination", offset=1)
+
+        if not fields["Delivery Note Date"] and "Delivery Note Date" in line:
+            fields["Delivery Note Date"] = find_value("Delivery Note Date", offset=1)
+
+        if not fields["Invoice Date"] and "Bill of Lading" in line and i + 2 < len(lines):
+            if "Dated" in lines[i + 1]:
+                fields["Invoice Date"] = lines[i + 2].strip()
+
+    # Fallback for Invoice Date if still blank
+    if not fields["Invoice Date"]:
+        for line in lines:
+            match = re.search(r"\b\d{1,2}-[A-Za-z]{3}-\d{2,4}\b", line)
+            if match:
+                fields["Invoice Date"] = match.group(0)
                 break
-            consignee_address.append(clean_line)
 
-    cleaned_address = ", ".join(dict.fromkeys(consignee_address))
+    # === Place of Supply ===
+    for line in lines:
+        if "Place of Supply" in line:
+            parts = line.split(":")
+            if len(parts) > 1:
+                fields["Place of Supply"] = parts[1].strip()
+            break
 
+    # === Consignee Section ===
+    for i, line in enumerate(lines):
+        if "Consignee (Ship to)" in line:
+            fields["Consignee Name"] = lines[i + 1].strip()
+            address_lines = []
+            for j in range(i + 2, i + 10):
+                if j >= len(lines) or "GSTIN" in lines[j] or "State Name" in lines[j]:
+                    break
+                address_lines.append(lines[j])
+            fields["Consignee Address"] = ", ".join(address_lines)
+
+        if "GSTIN/UIN" in line and not fields["Consignee GSTIN"]:
+            match = re.search(r"GSTIN/UIN\s*:\s*(\S+)", line)
+            if match:
+                fields["Consignee GSTIN"] = match.group(1)
+
+        if "State Name" in line and not fields["Consignee State Name"]:
+            match = re.search(r"State Name\s*:\s*(.+?),\s*Code\s*:\s*(\d+)", line)
+            if match:
+                fields["Consignee State Name"] = match.group(1).strip()
+                fields["Consignee State Code"] = match.group(2).strip()
+            break
+
+    # === Buyer Section ===
+    for i, line in enumerate(lines):
+        if "Buyer (Bill to)" in line:
+            fields["Buyer Name"] = lines[i + 1].strip()
+            address_lines = []
+            for j in range(i + 2, i + 10):
+                if j >= len(lines) or "GSTIN" in lines[j] or "State Name" in lines[j]:
+                    break
+                address_lines.append(lines[j])
+            fields["Buyer Address"] = ", ".join(address_lines)
+
+        if "GSTIN/UIN" in line and not fields["Buyer GSTIN"]:
+            match = re.search(r"GSTIN/UIN\s*:\s*(\S+)", line)
+            if match:
+                fields["Buyer GSTIN"] = match.group(1)
+
+        if "State Name" in line and not fields["Buyer State Name"]:
+            match = re.search(r"State Name\s*:\s*(.+?),\s*Code\s*:\s*(\d+)", line)
+            if match:
+                fields["Buyer State Name"] = match.group(1).strip()
+                fields["Buyer State Code"] = match.group(2).strip()
+            break
+
+    # === Finalize Invoice Date for Output Filename ===
+    invoice_date_str = fields["Invoice Date"]
     try:
         invoice_date_obj = datetime.strptime(invoice_date_str, "%d-%b-%y")
     except ValueError:
-        raise ValueError(f"Invalid invoice date: '{invoice_date_str}'")
-    month_file = invoice_date_obj.strftime("%b%y")
-    output_csv = os.path.join(OUTPUT_DIR, f"{month_file}Invoices.csv")
+        raise ValueError(f"Invalid invoice date format: '{invoice_date_str}'")
 
-    # === Line item parsing ===
-    data_rows = []
-    last_flushed_item = None
-    seen_items = set()
-    item_no = ""
-    description_lines = []
-    qty = ""
-    rate = ""
-    total = ""
-    in_summary_section = False
+    output_file = f"{invoice_date_obj.strftime('%b%y')}Invoices.csv"
+    output_path = os.path.join("files/output", output_file)
 
-    summary_triggers = [
-        "output cgst", "output sgst", "igst", "amount chargeable", "tax amount", "total", "₹",
-        "bank", "authorised signatory", "terms & conditions", "declaration",
-        "subject to", "warranty", "company"
-    ]
-
-    def is_summary_line(line):
-        return any(kw in line.lower() for kw in summary_triggers)
-
-    def flush_item():
-        nonlocal last_flushed_item
-        if item_no and description_lines and item_no != last_flushed_item:
-            data_rows.append([
-                invoice_date_str, invoice_number, consignee_name,
-                cleaned_address, place_of_delivery,
-                item_no, " ".join(description_lines).strip(),
-                qty, rate, total
-            ])
-            last_flushed_item = item_no
-
-    for idx, line in enumerate(lines):
-        clean = line.strip()
-
-        if not clean:
-            continue
-
-        if is_summary_line(clean):
-            flush_item()
-            break
-
-        parts = clean.split(maxsplit=1)
-        if len(parts) >= 2 and parts[0].isdigit():
-            # Flush previous
-            flush_item()
-
-            item_no = parts[0]
-            rest = parts[1]
-            description_lines = []
-            qty = rate = total = ""
-
-            std = re.match(r"(.*?)\s+(\d{5,})\s+(\d+)\s+NOS\s+([\d,.]+)\s+NOS\s+([\d,.]+)", rest)
-            svc = re.match(r"(.*?)\s+(\d{5,})\s+([\d,.]+)", rest)
-
-            if std:
-                description_lines = [std.group(1)]
-                qty = std.group(3)
-                rate = std.group(4).replace(",", "")
-                total = std.group(5).replace(",", "")
-            elif svc:
-                description_lines = [svc.group(1)]
-                qty = ""
-                rate = ""
-                total = svc.group(3).replace(",", "")
-            else:
-                description_lines = [rest]
-        else:
-            # Continuation
-            if item_no:
-                description_lines.append(clean)
-
-    flush_item()
-    
     # === Write to CSV ===
-    write_header = not os.path.exists(output_csv)
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
-    with open(output_csv, 'a', newline='', encoding='utf-8') as f:
+    write_header = not os.path.exists(output_path)
+    os.makedirs("files/output", exist_ok=True)
+    with open(output_path, 'a', newline='', encoding='utf-8') as f:
         writer = csv.writer(f)
         if write_header:
             writer.writerow([
-                "Invoice Date", "Invoice Number", "Consignee Name", "Consignee Address",
-                "Place of Delivery", "Item", "Item Description", "Qty", "Rate", "Total"
+                "Invoice Number", "Invoice Date", "IRN", "Ack No", "Ack Date", "e-Way Bill No",
+                "Dispatch Mode", "Motor Vehicle No", "Destination", "Delivery Note Date", "Buyer's Order No",
+                "Consignee Name", "Consignee Address", "Consignee GSTIN", "Consignee State Name", "Consignee State Code",
+                "Buyer Name", "Buyer Address", "Buyer GSTIN", "Buyer State Name", "Buyer State Code", "Place of Supply"
             ])
-        writer.writerows(data_rows)
+        writer.writerow([fields[key] for key in fields])
 
-    print(f"✅ Parsed {len(data_rows)} item(s) from: {os.path.basename(file_path)}")
+    print(f"✅ Extracted header for invoice {fields['Invoice Number']} → {output_path}")
+
 
 def move_file(file_path, target_dir):
     os.makedirs(target_dir, exist_ok=True)
