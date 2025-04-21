@@ -357,7 +357,7 @@ def extract_header_from_pdf(file_path):
     
     return header_data
 
-# === ITEM DETAILS EXTRACTION FUNCTION ===
+# === ITEM DETAILS EXTRACTION FUNCTION - MODIFIED ===
 def extract_items_from_pdf(file_path):
     """
     Extract item details from PDF invoice and return as a list of dictionaries
@@ -435,10 +435,10 @@ def extract_items_from_pdf(file_path):
                     
                     # Format 1: Regular product lines 
                     # Example: "1 PARTS OF MINI CRANE Circlip 30 mm 200.00 NOS33.33 6 NOS 84314990"
-                    item_match = re.match(r'^(\d+)\s+(PARTS\s+OF\s+[^\d]+)[\s]*([\d,.]+\.\d{2})\s+NOS([\d,.]+\.\d{2})\s+(\d+\s+NOS)\s+(\d+)$', line)
+                    item_match = re.match(r'^(\d+)\s+(PARTS\s+OF\s+[^\d]+)[\s]*([\d,.]+\.\d{2})\s+NOS([\d,.]+\.\d{2})\s+(\d+)\s+NOS\s+(\d+)$', line)
                     
                     if item_match:
-                        item_no, desc_base, amount, rate, qty, hsn = item_match.groups()
+                        item_no, desc_base, amount, rate, qty_value, hsn = item_match.groups()
                         
                         # Extract full description including part name
                         part_name = ""
@@ -457,9 +457,10 @@ def extract_items_from_pdf(file_path):
                             'invoice_number': invoice_number,
                             'item_no': item_no.strip(),
                             'description': full_desc.strip(),
-                            'amount': amount.strip(),
+                            'qty_value': qty_value.strip(),
+                            'qty_unit': 'NOS',  # Extracted unit
                             'rate': rate.strip(),
-                            'quantity': qty.strip(),
+                            'amount': amount.strip(),
                             'hsn_sac': hsn.strip()
                         })
                         processed_item_numbers.add(item_no)
@@ -491,11 +492,13 @@ def extract_items_from_pdf(file_path):
                                 hsn = part
                                 break
                         
-                        # Find quantity (look for patterns like "6 NOS")
-                        quantity = ""
-                        qty_match = re.search(r'(\d+\s+NOS)', line)
+                        # Find quantity - separate value and unit
+                        qty_value = ""
+                        qty_unit = ""
+                        qty_match = re.search(r'(\d+)\s+(NOS)', line)
                         if qty_match:
-                            quantity = qty_match.group(1)
+                            qty_value = qty_match.group(1)
+                            qty_unit = qty_match.group(2)
                         
                         # Find rate (typically after "NOS")
                         rate = ""
@@ -509,9 +512,10 @@ def extract_items_from_pdf(file_path):
                             'invoice_number': invoice_number,
                             'item_no': item_no.strip(),
                             'description': description.strip(),
-                            'amount': amount.strip(),
+                            'qty_value': qty_value.strip() if qty_value else "",
+                            'qty_unit': qty_unit.strip() if qty_unit else "",
                             'rate': rate.strip() if rate else "",
-                            'quantity': quantity.strip() if quantity else "",
+                            'amount': amount.strip(),
                             'hsn_sac': hsn.strip() if hsn else ""
                         })
                         processed_item_numbers.add(item_no)
@@ -523,7 +527,7 @@ def extract_items_from_pdf(file_path):
     print("\n--- Extracted Item Details ---")
     print(f"Found {len(items)} items")
     for item in items:
-        print(f"Item {item['item_no']}: {item['description']} - {item['amount']}")
+        print(f"Item {item['item_no']}: {item['description']} - {item['qty_value']} {item['qty_unit']} - Rate: {item['rate']} - Amount: {item['amount']}")
     print("----------------------------\n")
     
     return items
@@ -597,23 +601,24 @@ def process_pdf(file_path):
         with open(items_csv, 'a', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
             
-            # Write headers if file is new
+            # Write headers if file is new - UPDATED ORDER
             if not items_file_exists:
                 writer.writerow([
                     'File Name', 'Invoice Number', 'Item No', 'Description',
-                    'Amount', 'Rate', 'Quantity', 'HSN/SAC'
+                    'Quantity', 'Unit', 'Rate', 'Amount', 'HSN/SAC'
                 ])
             
-            # Write item rows
+            # Write item rows - UPDATED ORDER
             for item in items:
                 writer.writerow([
                     item['file_name'],
                     item['invoice_number'],
                     item['item_no'],
                     item['description'],
-                    item['amount'],
-                    item['rate'],
-                    item['quantity'],
+                    item['qty_value'],  # New order: Quantity value
+                    item['qty_unit'],    # New order: Unit
+                    item['rate'],        # New order: Rate
+                    item['amount'],      # New order: Amount
                     item['hsn_sac']
                 ])
         
