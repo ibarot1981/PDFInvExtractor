@@ -357,9 +357,238 @@ def extract_header_from_pdf(file_path):
     
     return header_data
 
+# === ITEM DETAILS EXTRACTION FUNCTION ===
+def extract_items_from_pdf(file_path):
+    """
+    Extract item details from PDF invoice and return as a list of dictionaries
+    """
+    file_name = os.path.basename(file_path)
+    invoice_number = ""
+    items = []
+    
+    with pdfplumber.open(file_path) as pdf:
+        all_text = ""
+        # Process all pages to get item data
+        for page in pdf.pages:
+            all_text += page.extract_text() + "\n"
+        
+        lines = all_text.splitlines()
+        
+        # Find invoice number first
+        for line in lines:
+            if 'SC' in line and re.search(r'SC\d{5}-\d{2}-\d{2}', line):
+                match = re.search(r'(SC\d{5}-\d{2}-\d{2})', line)
+                if match:
+                    invoice_number = match.group(1)
+                    break
+        
+        # Find the start of item table
+        item_start_indices = []
+        item_end_indices = []
+        
+        # Look for item section beginning markers
+        for idx, line in enumerate(lines):
+            # Check for various potential header styles
+            if (re.search(r'Sl\s+Description', line) and 
+                ('Quantity' in line or 'HSN/SAC' in line)) or \
+               (re.search(r'No\.\s+Goods and Services', line)):
+                item_start_indices.append(idx + 1)
+            
+            # Look for end markers in each section
+            if idx > 0 and idx in item_start_indices:
+                for end_idx in range(idx, len(lines)):
+                    if ("Amount Chargeable" in lines[end_idx] or 
+                        "Total" in lines[end_idx] or 
+                        "continued to page" in lines[end_idx] or
+                        "SUBJECT TO" in lines[end_idx]):
+                        item_end_indices.append(end_idx)
+                        break
+        
+        # Process all items from all sections (e.g., multiple pages)
+        for section_idx, start_idx in enumerate(item_start_indices):
+            end_idx = item_end_indices[section_idx] if section_idx < len(item_end_indices) else len(lines)
+            
+            for idx in range(start_idx, end_idx):
+                line = lines[idx].strip()
+                
+                # Skip empty lines or lines that aren't item entries
+                if not line or line.startswith("Sl") or line.startswith("No."):
+                    continue
+                
+                # Try to match the pattern in the sample invoice:
+                # It starts with a number, followed by description, amount, rate, quantity, and HSN code
+                item_match = re.match(r'^(\d+)\s+(PARTS\s+OF\s+[A-Za-z\s]+)\s+([\d,.]+\.\d{2})\s+NOS([\d,.]+\.\d{2})\s+(\d+\s+NOS)\s+(\d+)$', line)
+                
+                if item_match:
+                    item_no, desc, amount, rate, qty, hsn = item_match.groups()
+                    
+                    # Get the full description (including part name after "PARTS OF MINI CRANE")
+                    full_desc = desc
+                    if "PARTS OF" in desc:
+                        part_name_match = re.search(r'PARTS\s+OF\s+[A-Za-z\s]+\s+(.*?)$', line)
+                        if part_name_match:
+                            part_name = part_name_match.group(1).strip()
+                            # If there's additional text between the category and the numbers, add it to description
+                            if part_name and not re.match(r'^[\d,.]+\.\d{2}', part_name):
+                                full_desc = desc + " " + part_name
+                                # Need to re-extract the amount, rate, etc. as the pattern changed
+                                numbers = re.findall(r'([\d,.]+\.\d{2})', line)
+                                if len(numbers) >= 2:
+                                    amount = numbers[0]
+                                    rate = numbers[1]
+                    
+                    # Try to extract quantity with unit (e.g., "6 NOS")
+                    qty_match = re.search(r'(\d+\s+NOS)', line)
+                    quantity = qty_match.group(1) if qty_match else qty
+                    
+                    # Get HSN code (looking for an 8-digit number at the end)
+                    hsn_match = re.search(r'(\d{8})', line)
+                    hsn_code = hsn_match.group(1) if hsn_match else hsn
+                    
+                    items.append({
+                        'file_name': file_name,
+                        'invoice_number': invoice_number,
+                        'item_no': item_no.strip(),
+                        'description': full_desc.strip(),
+                        'amount': amount.strip(),
+                        'rate': rate.strip(),
+                        'quantity': quantity.strip(),
+                        'hsn_sac': hsn_code.strip()
+                    })
+                else:
+                    # Try more flexible pattern for other item formats
+                    # Example: "1 PARTS OF MINI CRANE 200.00 NOS33.33 6 NOS 84314990"
+                    item_match = re.match(r'^(\d+)\s+(.*?)\s+([\d,.]+\.\d{2})\s+NOS([\d,.]+\.\d{2})\s+(\d+\s+NOS)\s+(\d+)$', line)
+                    
+                    if item_match:
+                        item_no, desc, amount, rate, qty, hsn = item_match.groups()
+                        items.append({
+                            'file_name': file_name,
+                            'invoice_number': invoice_number,
+                            'item_no': item_no.strip(),
+                            'description': desc.strip(),
+                            'amount': amount.strip(),
+                            'rate': rate.strip(),
+                            'quantity': qty.strip(),
+                            'hsn_sac': hsn.strip()
+                        })
+                    # Try to match service items which have different formats
+                    elif line.startswith(tuple(str(i) for i in range(1, 100))) and "Service" in line:
+                        parts = line.split()
+                        if len(parts) >= 4:
+                            item_no = parts[0]
+                            
+                            # Extract description (everything before the amount)
+                            # Find the last part that might be the amount (contains decimal)
+                            amount_idx = -1
+                            for i, part in enumerate(parts):
+                                if re.match(r'[\d,.]+\.\d{2}$', part):
+                                    amount_idx = i
+                                    break
+                            
+                            if amount_idx > 0:
+                                desc = ' '.join(parts[1:amount_idx])
+                                amount = parts[amount_idx]
+                                
+                                # Extract HSN/SAC code (typically an 6-digit number)
+                                hsn = ""
+                                for part in parts:
+                                    if re.match(r'^\d{6}$', part):
+                                        hsn = part
+                                        break
+                                
+                                items.append({
+                                    'file_name': file_name,
+                                    'invoice_number': invoice_number,
+                                    'item_no': item_no.strip(),
+                                    'description': desc.strip(),
+                                    'amount': amount.strip(),
+                                    'rate': "",  # Service items may not have a rate
+                                    'quantity': "",  # Service items may not have a quantity
+                                    'hsn_sac': hsn.strip()
+                                })
+                    
+                    # Try to extract items that span multiple lines
+                    elif re.match(r'^\d+\s+', line) and len(line.split()) >= 2:
+                        # This line starts with a number but doesn't match our patterns
+                        # It could be a multi-line item or different format
+                        parts = line.split()
+                        item_no = parts[0]
+                        
+                        # Try to find amount, rate, quantity, HSN in that order
+                        amount = ""
+                        rate = ""
+                        quantity = ""
+                        hsn = ""
+                        
+                        # Extract description (everything between item number and the first numeric value)
+                        desc_parts = []
+                        for part in parts[1:]:
+                            if re.match(r'[\d,.]+\.\d{2}$', part):
+                                # Found what looks like an amount
+                                amount = part
+                                break
+                            desc_parts.append(part)
+                        
+                        desc = ' '.join(desc_parts)
+                        
+                        # Look for NOS pattern for quantity
+                        nos_match = re.search(r'(\d+\s+NOS)', line)
+                        if nos_match:
+                            quantity = nos_match.group(1)
+                        
+                        # Look for HSN code (8-digit number)
+                        hsn_match = re.search(r'(\d{8})', line)
+                        if hsn_match:
+                            hsn = hsn_match.group(1)
+                        
+                        # Look for rate (typically between amount and quantity)
+                        if amount:
+                            amount_pos = line.find(amount)
+                            after_amount = line[amount_pos + len(amount):]
+                            rate_match = re.search(r'NOS([\d,.]+\.\d{2})', after_amount)
+                            if rate_match:
+                                rate = rate_match.group(1)
+                        
+                        items.append({
+                            'file_name': file_name,
+                            'invoice_number': invoice_number,
+                            'item_no': item_no.strip(),
+                            'description': desc.strip(),
+                            'amount': amount.strip(),
+                            'rate': rate.strip(),
+                            'quantity': quantity.strip(),
+                            'hsn_sac': hsn.strip()
+                        })
+    
+    # Clean up any items with missing values
+    filtered_items = []
+    for item in items:
+        # Keep only items that have at least item number and description
+        if item['item_no'] and item['description']:
+            # Try to improve HSN/SAC extraction
+            if not item['hsn_sac'] and 'description' in item:
+                hsn_match = re.search(r'(\d{8})', item['description'])
+                if hsn_match:
+                    item['hsn_sac'] = hsn_match.group(1)
+                    # Remove the HSN from description if it was there
+                    item['description'] = re.sub(r'\s+\d{8}\s*$', '', item['description'])
+                    
+            filtered_items.append(item)
+    
+    # Debug output
+    print("\n--- Extracted Item Details ---")
+    print(f"Found {len(filtered_items)} items")
+    for item in filtered_items:
+        print(f"Item {item['item_no']}: {item['description']} - {item['amount']}")
+    print("----------------------------\n")
+    
+    return filtered_items
+
 # === PROCESS PDF AND WRITE TO CSV ===
 def process_pdf(file_path):
     try:
+        # Extract header data
         header_data = extract_header_from_pdf(file_path)
         
         # Format the date for the output filename
@@ -371,19 +600,19 @@ def process_pdf(file_path):
             # Use current month/year as fallback
             month_file = datetime.now().strftime("%b%y")
         
-        output_csv = os.path.join(OUTPUT_DIR, f"{month_file}Headers.csv")
+        headers_csv = os.path.join(OUTPUT_DIR, f"{month_file}Headers.csv")
         
         # Create output directory if it doesn't exist
         os.makedirs(OUTPUT_DIR, exist_ok=True)
         
         # Check if the file exists to determine if we need to write headers
-        file_exists = os.path.isfile(output_csv)
+        headers_file_exists = os.path.isfile(headers_csv)
         
-        with open(output_csv, 'a', newline='', encoding='utf-8') as f:
+        with open(headers_csv, 'a', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
             
             # Write headers if file is new
-            if not file_exists:
+            if not headers_file_exists:
                 writer.writerow([
                     'File Name',  # Added filename as the first field in CSV header
                     'Invoice Number', 'Invoice Date',
@@ -415,7 +644,39 @@ def process_pdf(file_path):
                 header_data['destination']
             ])
         
-        print(f"✅ Extracted header data from {os.path.basename(file_path)} and appended to {output_csv}")
+        # Extract and write item details to a separate CSV
+        items = extract_items_from_pdf(file_path)
+        items_csv = os.path.join(OUTPUT_DIR, f"{month_file}ItemDetails.csv")
+        
+        # Check if the items file exists
+        items_file_exists = os.path.isfile(items_csv)
+        
+        with open(items_csv, 'a', newline='', encoding='utf-8') as f:
+            writer = csv.writer(f)
+            
+            # Write headers if file is new
+            if not items_file_exists:
+                writer.writerow([
+                    'File Name', 'Invoice Number', 'Item No', 'Description',
+                    'Amount', 'Rate', 'Quantity', 'HSN/SAC'
+                ])
+            
+            # Write item rows
+            for item in items:
+                writer.writerow([
+                    item['file_name'],
+                    item['invoice_number'],
+                    item['item_no'],
+                    item['description'],
+                    item['amount'],
+                    item['rate'],
+                    item['quantity'],
+                    item['hsn_sac']
+                ])
+        
+        print(f"✅ Extracted data from {os.path.basename(file_path)}")
+        print(f"   Headers appended to: {headers_csv}")
+        print(f"   Items appended to: {items_csv}")
         return True
     
     except Exception as e:
