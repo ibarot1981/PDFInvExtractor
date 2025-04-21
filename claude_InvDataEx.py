@@ -22,22 +22,29 @@ def extract_header_from_pdf(file_path):
     """
     Extract header information from PDF invoice and return as dictionary
     """
+    file_name = os.path.basename(file_path)
+    
     with pdfplumber.open(file_path) as pdf:
         # We only process the first page for header information
         text = pdf.pages[0].extract_text()
         lines = text.splitlines()
     
     header_data = {
+        'file_name': file_name,  # Added filename as the first field
         'invoice_number': '',
         'invoice_date': '',
         'consignee_name': '',
         'consignee_address': '',
         'consignee_gstin': '',
         'consignee_state': '',
+        'consignee_contact': '',
+        'consignee_email': '',
         'buyer_name': '',
         'buyer_address': '',
         'buyer_gstin': '',
         'buyer_state': '',
+        'buyer_contact': '',
+        'buyer_email': '',
         'place_of_supply': '',
         'destination': ''
     }
@@ -49,22 +56,36 @@ def extract_header_from_pdf(file_path):
     print("----------------------\n")
     
     # Find invoice number
+    invoice_line_idx = None
     for idx, line in enumerate(lines):
         if 'SC' in line and re.search(r'SC\d{5}-\d{2}-\d{2}', line):
             match = re.search(r'(SC\d{5}-\d{2}-\d{2})', line)
             if match:
                 header_data['invoice_number'] = match.group(1)
+                invoice_line_idx = idx
                 break
     
-    # Multiple date extraction approaches
-    # Approach 1: Look for "Dated" followed by date
-    for idx, line in enumerate(lines):
-        if 'Dated' in line:
-            date_match = re.search(r'Dated\s+(\d{1,2}-[A-Za-z]{3}-\d{2})', line)
-            if date_match:
+    # Improved date extraction - first look near invoice number
+    # New approach: Look for date near invoice number line
+    if invoice_line_idx is not None:
+        # Check the invoice line and surrounding lines (+/- 3 lines)
+        for i in range(max(0, invoice_line_idx - 3), min(len(lines), invoice_line_idx + 4)):
+            date_match = re.search(r'(\d{1,2}-[A-Za-z]{3}-\d{2})', lines[i])
+            if date_match and 'Ack Date' not in lines[i]:
                 header_data['invoice_date'] = date_match.group(1)
-                print(f"Found date via 'Dated' pattern: {header_data['invoice_date']}")
+                print(f"Found date near invoice number: {header_data['invoice_date']}")
                 break
+    
+    # If date not found near invoice, try other approaches
+    # Approach 1: Look for "Dated" followed by date
+    if not header_data['invoice_date']:
+        for idx, line in enumerate(lines):
+            if 'Dated' in line:
+                date_match = re.search(r'Dated\s+(\d{1,2}-[A-Za-z]{3}-\d{2})', line)
+                if date_match:
+                    header_data['invoice_date'] = date_match.group(1)
+                    print(f"Found date via 'Dated' pattern: {header_data['invoice_date']}")
+                    break
     
     # Approach 2: If above fails, look for date pattern anywhere near relevant fields
     if not header_data['invoice_date']:
@@ -78,35 +99,110 @@ def extract_header_from_pdf(file_path):
                     print(f"Found date via general pattern: {header_data['invoice_date']}")
                     break
     
-    # Approach 3: Look specifically near the invoice number and bill of lading
+    # Approach 3: Look specifically near bill of lading
     if not header_data['invoice_date']:
         for idx, line in enumerate(lines):
-            if 'Bill of Lading' in line or 'LR-RR No' in line or 'Invoice No' in line:
+            if 'Bill of Lading' in line or 'LR-RR No' in line:
                 # Check this line and next few lines
                 for i in range(idx, min(idx+5, len(lines))):
                     date_match = re.search(r'(\d{1,2}-[A-Za-z]{3}-\d{2})', lines[i])
                     if date_match:
                         header_data['invoice_date'] = date_match.group(1)
-                        print(f"Found date near invoice/bill of lading: {header_data['invoice_date']}")
+                        print(f"Found date near bill of lading: {header_data['invoice_date']}")
                         break
                 if header_data['invoice_date']:
                     break
     
-    # Find destination
+    # Enhanced approach for finding destination - multiple methods
+    destination_found = False
+    
+    # Method 1: Look for explicit "Destination:" or "Destination "
     for idx, line in enumerate(lines):
-        if 'Destination' in line:
-            dest_match = re.search(r'Destination\s+(.+?)$', line)
+        if re.search(r'Destination\s*[:]\s*(.+?)(?:$|Motor Vehicle|Dispatched)', line, re.IGNORECASE):
+            dest_match = re.search(r'Destination\s*[:]\s*(.+?)(?:$|Motor Vehicle|Dispatched)', line, re.IGNORECASE)
             if dest_match:
                 header_data['destination'] = dest_match.group(1).strip()
-            # If not on the same line, it might be on next line
-            elif idx + 1 < len(lines) and not lines[idx+1].strip().startswith('Motor Vehicle'):
-                header_data['destination'] = lines[idx+1].strip()
-            break
+                destination_found = True
+                print(f"Found destination via pattern 1: {header_data['destination']}")
+                break
+    
+    # Method 2: Look for "Destination" word and extract the next part
+    if not destination_found:
+        for idx, line in enumerate(lines):
+            if re.search(r'\bDestination\b', line, re.IGNORECASE):
+                # Check if destination is on the same line
+                parts = re.split(r'\bDestination\b[\s:]*', line, flags=re.IGNORECASE)
+                if len(parts) > 1 and parts[1].strip():
+                    # Get everything after "Destination" on the same line
+                    header_data['destination'] = parts[1].strip()
+                    # If there are other fields on the same line, trim at those points
+                    for stop_point in ['Motor Vehicle', 'Dispatched through', 'Terms of Delivery']:
+                        if stop_point in header_data['destination']:
+                            header_data['destination'] = header_data['destination'].split(stop_point)[0].strip()
+                    
+                    destination_found = True
+                    print(f"Found destination via pattern 2: {header_data['destination']}")
+                    break
+                
+                # If not on same line, check the next line
+                elif idx + 1 < len(lines) and not any(x in lines[idx+1].lower() for x in ['motor vehicle', 'dispatched']):
+                    next_line = lines[idx+1].strip()
+                    # Make sure it's not the start of another section
+                    if not any(next_line.startswith(x) for x in ['Motor', 'Dispatched', 'Terms']):
+                        header_data['destination'] = next_line
+                        # If there are other fields on this line, trim at those points
+                        for stop_point in ['Motor Vehicle', 'Dispatched through', 'Terms of Delivery']:
+                            if stop_point in header_data['destination']:
+                                header_data['destination'] = header_data['destination'].split(stop_point)[0].strip()
+                        
+                        destination_found = True
+                        print(f"Found destination via pattern 3: {header_data['destination']}")
+                        break
+    
+    # Method 3: Look specifically between "Destination" and "Motor Vehicle"
+    if not destination_found:
+        for idx, line in enumerate(lines):
+            if 'Destination' in line:
+                # Find the index range for the lines between Destination and Motor Vehicle
+                dest_idx = idx
+                motor_idx = None
+                
+                for i in range(idx, min(len(lines), idx + 5)):
+                    if 'Motor Vehicle' in lines[i]:
+                        motor_idx = i
+                        break
+                
+                if dest_idx is not None and motor_idx is not None:
+                    # Extract text between these points
+                    if dest_idx == motor_idx:
+                        # Destination and Motor Vehicle on same line
+                        parts = line.split('Destination')[1].split('Motor Vehicle')[0].strip()
+                        if parts:
+                            header_data['destination'] = parts.strip(':').strip()
+                            destination_found = True
+                            print(f"Found destination via pattern 4: {header_data['destination']}")
+                    else:
+                        # Destination and Motor Vehicle on different lines
+                        dest_text = lines[dest_idx].split('Destination')[1].strip(':').strip()
+                        if dest_text:
+                            header_data['destination'] = dest_text
+                            destination_found = True
+                            print(f"Found destination via pattern 5: {header_data['destination']}")
+    
+    # Method 4: Look for common destination patterns like "Destination: Mumbai"
+    if not destination_found:
+        for idx, line in enumerate(lines):
+            dest_pattern = re.search(r'Destination\s*[:-]\s*([A-Za-z\s]+)(?:\s|$)', line, re.IGNORECASE)
+            if dest_pattern:
+                header_data['destination'] = dest_pattern.group(1).strip()
+                destination_found = True
+                print(f"Found destination via pattern 6: {header_data['destination']}")
+                break
     
     # Find place of supply
     for idx, line in enumerate(lines):
         if 'Place of Supply' in line:
-            match = re.search(r'Place of Supply\s*:\s*(.+?)$', line)
+            match = re.search(r'Place of Supply\s*:\s*(.+?)(?:$|State Code)', line)
             if match:
                 header_data['place_of_supply'] = match.group(1).strip()
             break
@@ -135,12 +231,38 @@ def extract_header_from_pdf(file_path):
         
         # Extract address (lines between name and GSTIN)
         address_lines = []
+        consignee_full_text = ""  # For searching contact and email
+        
         for idx in range(consignee_start + 1, consignee_end):
             line = lines[idx].strip()
             if 'GSTIN/UIN' in line:
                 break
             address_lines.append(line)
+            consignee_full_text += line + " "
+        
         header_data['consignee_address'] = ", ".join(address_lines)
+        
+        # Extract contact number
+        phone_patterns = [
+            r'(?:Phone|Ph|Tel|T|Contact|Mobile|Mob)[:\s.\-]+(\+?\d[\d\s\-]{8,})',
+            r'(?<!\S)(\+?\d{10,12})(?!\S)',  # Standalone 10-12 digit number
+            r'(?<!\S)(\d{3,5}[\s\-]\d{6,8})(?!\S)'  # Format like 022-12345678
+        ]
+        
+        for pattern in phone_patterns:
+            phone_match = re.search(pattern, consignee_full_text, re.IGNORECASE)
+            if phone_match:
+                header_data['consignee_contact'] = phone_match.group(1).strip()
+                # Remove contact from address
+                header_data['consignee_address'] = re.sub(pattern, '', header_data['consignee_address'], flags=re.IGNORECASE)
+                break
+        
+        # Extract email
+        email_match = re.search(r'[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}', consignee_full_text)
+        if email_match:
+            header_data['consignee_email'] = email_match.group(0).strip()
+            # Remove email from address
+            header_data['consignee_address'] = header_data['consignee_address'].replace(header_data['consignee_email'], '')
         
         # Extract GSTIN and State
         for idx in range(consignee_start, consignee_end):
@@ -161,12 +283,38 @@ def extract_header_from_pdf(file_path):
         
         # Extract address (lines between name and GSTIN)
         address_lines = []
+        buyer_full_text = ""  # For searching contact and email
+        
         for idx in range(buyer_start + 1, buyer_end):
             line = lines[idx].strip()
             if 'GSTIN/UIN' in line:
                 break
             address_lines.append(line)
+            buyer_full_text += line + " "
+        
         header_data['buyer_address'] = ", ".join(address_lines)
+        
+        # Extract contact number
+        phone_patterns = [
+            r'(?:Phone|Ph|Tel|T|Contact|Mobile|Mob)[:\s.\-]+(\+?\d[\d\s\-]{8,})',
+            r'(?<!\S)(\+?\d{10,12})(?!\S)',  # Standalone 10-12 digit number
+            r'(?<!\S)(\d{3,5}[\s\-]\d{6,8})(?!\S)'  # Format like 022-12345678
+        ]
+        
+        for pattern in phone_patterns:
+            phone_match = re.search(pattern, buyer_full_text, re.IGNORECASE)
+            if phone_match:
+                header_data['buyer_contact'] = phone_match.group(1).strip()
+                # Remove contact from address
+                header_data['buyer_address'] = re.sub(pattern, '', header_data['buyer_address'], flags=re.IGNORECASE)
+                break
+        
+        # Extract email
+        email_match = re.search(r'[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}', buyer_full_text)
+        if email_match:
+            header_data['buyer_email'] = email_match.group(0).strip()
+            # Remove email from address  
+            header_data['buyer_address'] = header_data['buyer_address'].replace(header_data['buyer_email'], '')
         
         # Extract GSTIN and State
         for idx in range(buyer_start, buyer_end):
@@ -192,6 +340,14 @@ def extract_header_from_pdf(file_path):
             
             # Clean up any multiple spaces, leading/trailing spaces
             header_data[key] = re.sub(r'\s+', ' ', header_data[key]).strip()
+            
+            # Remove any leading colons or similar punctuation
+            header_data[key] = re.sub(r'^[:\s]+', '', header_data[key])
+            
+            # Clean up common punctuation issues in addresses after removing contacts/emails
+            if 'address' in key:
+                header_data[key] = re.sub(r'\s*,\s*,\s*', ', ', header_data[key])
+                header_data[key] = re.sub(r'\s*,\s*$', '', header_data[key])
     
     # Debug output
     print("\n--- Extracted Header Data ---")
@@ -229,24 +385,32 @@ def process_pdf(file_path):
             # Write headers if file is new
             if not file_exists:
                 writer.writerow([
+                    'File Name',  # Added filename as the first field in CSV header
                     'Invoice Number', 'Invoice Date',
-                    'Consignee Name', 'Consignee Address', 'Consignee GSTIN', 'Consignee State',
+                    'Consignee Name', 'Consignee Address', 'Consignee GSTIN', 'Consignee State', 
+                    'Consignee Contact No', 'Consignee Email',
                     'Buyer Name', 'Buyer Address', 'Buyer GSTIN', 'Buyer State',
+                    'Buyer Contact No', 'Buyer Email',
                     'Place of Supply', 'Destination'
                 ])
             
             # Write data row
             writer.writerow([
+                header_data['file_name'],  # Added filename as the first field in CSV data
                 header_data['invoice_number'],
                 header_data['invoice_date'],
                 header_data['consignee_name'],
                 header_data['consignee_address'],
                 header_data['consignee_gstin'],
                 header_data['consignee_state'],
+                header_data['consignee_contact'],
+                header_data['consignee_email'],
                 header_data['buyer_name'],
                 header_data['buyer_address'],
                 header_data['buyer_gstin'],
                 header_data['buyer_state'],
+                header_data['buyer_contact'],
+                header_data['buyer_email'],
                 header_data['place_of_supply'],
                 header_data['destination']
             ])

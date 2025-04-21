@@ -1,9 +1,5 @@
-ok, following problems are observed :
-1. invoice date is captured as 9-Apr-2025 whereas Invoice date should be 8-Apr-2025
-2. e-Way Bill No is captured as value "Dated" whereas its correct value is "621886863349"
-3. Dispatched Mode is captured as value "Mumbai Suburban, Maharashtra, Cont No. 9321098364 By Tempo West Mumbai" whereas the correct value is "By Tempo"
-4. Motor Vehicle No. is captures as value "GSTIN/UIN : 27AAVPS1117M1Z3" but it should be "MH47Y9121".
-5. Designation is captured as "Mumbai Suburban, Maharashtra, Cont No. 9321098364 By Tempo West Mumbai" but it should be "West Mumbai"
-6. Delivery Note Date and Buyer Order No. is correct as blank value
-7. Consignee Name is captured as "Leak Seal Dispatch Doc No. Delivery Note Date" but should be "Leak Seal".
-Like wise many values are incorrectly captured but when you gave the list of values earlier to select which fields are needed, you had them correct.
+great. It gave me a clean extraction. Following was printed in the console : Found date via general pattern: 8-Apr-25
+Now we have a general extraction working, I need the following :
+1. Watchdog functionality to ensure new files are continuously process as well. If the input directory has files before the script was started it should also be processed.
+2. If Consignee has a contact number in its address, it should be captured as a different field "Consignee Contact No". Similarly if it has email address, then it should capture it in "Consignee Email".
+3. Do the same with Buyer as "Buyer Contact No." and "Buyer Email" fields.
