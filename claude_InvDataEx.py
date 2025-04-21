@@ -365,188 +365,142 @@ def extract_items_from_pdf(file_path):
     file_name = os.path.basename(file_path)
     invoice_number = ""
     items = []
+    processed_item_numbers = set()  # Track already processed item numbers
     
     with pdfplumber.open(file_path) as pdf:
-        all_text = ""
-        # Process all pages to get item data
-        for page in pdf.pages:
-            all_text += page.extract_text() + "\n"
+        # First, get the invoice number from the first page
+        first_page_text = pdf.pages[0].extract_text()
+        first_page_lines = first_page_text.splitlines()
         
-        lines = all_text.splitlines()
-        
-        # Find invoice number first
-        for line in lines:
+        for line in first_page_lines:
             if 'SC' in line and re.search(r'SC\d{5}-\d{2}-\d{2}', line):
                 match = re.search(r'(SC\d{5}-\d{2}-\d{2})', line)
                 if match:
                     invoice_number = match.group(1)
                     break
         
-        # Find the start of item table
-        item_start_indices = []
-        item_end_indices = []
-        
-        # Look for item section beginning markers
-        for idx, line in enumerate(lines):
-            # Check for various potential header styles
-            if (re.search(r'Sl\s+Description', line) and 
-                ('Quantity' in line or 'HSN/SAC' in line)) or \
-               (re.search(r'No\.\s+Goods and Services', line)):
-                item_start_indices.append(idx + 1)
+        # Now process each page separately to avoid duplicates
+        for page_num, page in enumerate(pdf.pages):
+            page_text = page.extract_text()
+            lines = page_text.splitlines()
             
-            # Look for end markers in each section
-            if idx > 0 and idx in item_start_indices:
-                for end_idx in range(idx, len(lines)):
-                    if ("Amount Chargeable" in lines[end_idx] or 
-                        "Total" in lines[end_idx] or 
-                        "continued to page" in lines[end_idx] or
-                        "SUBJECT TO" in lines[end_idx]):
-                        item_end_indices.append(end_idx)
+            print(f"\nProcessing page {page_num + 1}")
+            
+            # Find the start and end of item table for this page
+            item_start_idx = None
+            item_end_idx = None
+            
+            for idx, line in enumerate(lines):
+                # Look for table headers
+                if (re.search(r'Sl\s+Description', line) and 
+                    ('Quantity' in line or 'HSN/SAC' in line)) or \
+                   (re.search(r'No\.\s+Goods and Services', line)):
+                    item_start_idx = idx + 1
+                    break
+            
+            if item_start_idx:
+                # Look for end markers
+                for idx in range(item_start_idx, len(lines)):
+                    if ("Amount Chargeable" in lines[idx] or 
+                        "Total" in lines[idx] or 
+                        "continued to page" in lines[idx] or
+                        "SUBJECT TO" in lines[idx]):
+                        item_end_idx = idx
                         break
-        
-        # Process all items from all sections (e.g., multiple pages)
-        for section_idx, start_idx in enumerate(item_start_indices):
-            end_idx = item_end_indices[section_idx] if section_idx < len(item_end_indices) else len(lines)
-            
-            for idx in range(start_idx, end_idx):
-                line = lines[idx].strip()
                 
-                # Skip empty lines or lines that aren't item entries
-                if not line or line.startswith("Sl") or line.startswith("No."):
-                    continue
+                # If no end marker found, process until end of page
+                if not item_end_idx:
+                    item_end_idx = len(lines)
                 
-                # Try to match the pattern in the sample invoice:
-                # It starts with a number, followed by description, amount, rate, quantity, and HSN code
-                item_match = re.match(r'^(\d+)\s+(PARTS\s+OF\s+[A-Za-z\s]+)\s+([\d,.]+\.\d{2})\s+NOS([\d,.]+\.\d{2})\s+(\d+\s+NOS)\s+(\d+)$', line)
-                
-                if item_match:
-                    item_no, desc, amount, rate, qty, hsn = item_match.groups()
+                # Process item lines for this page
+                for idx in range(item_start_idx, item_end_idx):
+                    line = lines[idx].strip()
                     
-                    # Get the full description (including part name after "PARTS OF MINI CRANE")
-                    full_desc = desc
-                    if "PARTS OF" in desc:
-                        part_name_match = re.search(r'PARTS\s+OF\s+[A-Za-z\s]+\s+(.*?)$', line)
-                        if part_name_match:
-                            part_name = part_name_match.group(1).strip()
-                            # If there's additional text between the category and the numbers, add it to description
-                            if part_name and not re.match(r'^[\d,.]+\.\d{2}', part_name):
-                                full_desc = desc + " " + part_name
-                                # Need to re-extract the amount, rate, etc. as the pattern changed
-                                numbers = re.findall(r'([\d,.]+\.\d{2})', line)
-                                if len(numbers) >= 2:
-                                    amount = numbers[0]
-                                    rate = numbers[1]
+                    # Skip empty lines or table headers
+                    if not line or line.startswith("Sl") or line.startswith("No."):
+                        continue
                     
-                    # Try to extract quantity with unit (e.g., "6 NOS")
-                    qty_match = re.search(r'(\d+\s+NOS)', line)
-                    quantity = qty_match.group(1) if qty_match else qty
+                    # Check if line starts with a number (potential item number)
+                    item_num_match = re.match(r'^(\d+)\s+', line)
+                    if not item_num_match:
+                        continue
                     
-                    # Get HSN code (looking for an 8-digit number at the end)
-                    hsn_match = re.search(r'(\d{8})', line)
-                    hsn_code = hsn_match.group(1) if hsn_match else hsn
+                    item_no = item_num_match.group(1).strip()
                     
-                    items.append({
-                        'file_name': file_name,
-                        'invoice_number': invoice_number,
-                        'item_no': item_no.strip(),
-                        'description': full_desc.strip(),
-                        'amount': amount.strip(),
-                        'rate': rate.strip(),
-                        'quantity': quantity.strip(),
-                        'hsn_sac': hsn_code.strip()
-                    })
-                else:
-                    # Try more flexible pattern for other item formats
-                    # Example: "1 PARTS OF MINI CRANE 200.00 NOS33.33 6 NOS 84314990"
-                    item_match = re.match(r'^(\d+)\s+(.*?)\s+([\d,.]+\.\d{2})\s+NOS([\d,.]+\.\d{2})\s+(\d+\s+NOS)\s+(\d+)$', line)
+                    # Skip if we've already processed this item number
+                    if item_no in processed_item_numbers:
+                        continue
+                    
+                    # Try to match different item formats
+                    
+                    # Format 1: Regular product lines 
+                    # Example: "1 PARTS OF MINI CRANE Circlip 30 mm 200.00 NOS33.33 6 NOS 84314990"
+                    item_match = re.match(r'^(\d+)\s+(PARTS\s+OF\s+[^\d]+)[\s]*([\d,.]+\.\d{2})\s+NOS([\d,.]+\.\d{2})\s+(\d+\s+NOS)\s+(\d+)$', line)
                     
                     if item_match:
-                        item_no, desc, amount, rate, qty, hsn = item_match.groups()
+                        item_no, desc_base, amount, rate, qty, hsn = item_match.groups()
+                        
+                        # Extract full description including part name
+                        part_name = ""
+                        
+                        # Find where the description ends (where numbers begin)
+                        for part in line.split()[2:]:  # Skip item number and "PARTS"
+                            if re.match(r'^[\d,.]+\.\d{2}$', part):
+                                break
+                            if "PARTS OF" not in part:  # Don't add "PARTS OF" twice
+                                part_name += " " + part
+                        
+                        full_desc = desc_base.strip() + part_name.strip()
+                        
                         items.append({
                             'file_name': file_name,
                             'invoice_number': invoice_number,
                             'item_no': item_no.strip(),
-                            'description': desc.strip(),
+                            'description': full_desc.strip(),
                             'amount': amount.strip(),
                             'rate': rate.strip(),
                             'quantity': qty.strip(),
                             'hsn_sac': hsn.strip()
                         })
-                    # Try to match service items which have different formats
-                    elif line.startswith(tuple(str(i) for i in range(1, 100))) and "Service" in line:
-                        parts = line.split()
-                        if len(parts) >= 4:
-                            item_no = parts[0]
-                            
-                            # Extract description (everything before the amount)
-                            # Find the last part that might be the amount (contains decimal)
-                            amount_idx = -1
-                            for i, part in enumerate(parts):
-                                if re.match(r'[\d,.]+\.\d{2}$', part):
-                                    amount_idx = i
-                                    break
-                            
-                            if amount_idx > 0:
-                                desc = ' '.join(parts[1:amount_idx])
-                                amount = parts[amount_idx]
-                                
-                                # Extract HSN/SAC code (typically an 6-digit number)
-                                hsn = ""
-                                for part in parts:
-                                    if re.match(r'^\d{6}$', part):
-                                        hsn = part
-                                        break
-                                
-                                items.append({
-                                    'file_name': file_name,
-                                    'invoice_number': invoice_number,
-                                    'item_no': item_no.strip(),
-                                    'description': desc.strip(),
-                                    'amount': amount.strip(),
-                                    'rate': "",  # Service items may not have a rate
-                                    'quantity': "",  # Service items may not have a quantity
-                                    'hsn_sac': hsn.strip()
-                                })
+                        processed_item_numbers.add(item_no)
+                        continue
                     
-                    # Try to extract items that span multiple lines
-                    elif re.match(r'^\d+\s+', line) and len(line.split()) >= 2:
-                        # This line starts with a number but doesn't match our patterns
-                        # It could be a multi-line item or different format
-                        parts = line.split()
+                    # Format 2: Service items and other formats
+                    # Use a more flexible approach that extracts what's available
+                    parts = line.split()
+                    
+                    if len(parts) >= 3:  # Need at least item number, some description, and value
                         item_no = parts[0]
                         
-                        # Try to find amount, rate, quantity, HSN in that order
+                        # Find amount (look for decimal number pattern)
                         amount = ""
-                        rate = ""
-                        quantity = ""
-                        hsn = ""
-                        
-                        # Extract description (everything between item number and the first numeric value)
-                        desc_parts = []
-                        for part in parts[1:]:
-                            if re.match(r'[\d,.]+\.\d{2}$', part):
-                                # Found what looks like an amount
+                        amount_pos = -1
+                        for i, part in enumerate(parts):
+                            if re.match(r'^[\d,.]+\.\d{2}$', part):
                                 amount = part
+                                amount_pos = i
                                 break
-                            desc_parts.append(part)
                         
-                        desc = ' '.join(desc_parts)
+                        # Extract description (everything before the amount)
+                        description = ' '.join(parts[1:amount_pos]) if amount_pos > 1 else ' '.join(parts[1:3])
                         
-                        # Look for NOS pattern for quantity
-                        nos_match = re.search(r'(\d+\s+NOS)', line)
-                        if nos_match:
-                            quantity = nos_match.group(1)
+                        # Find HSN/SAC (typically 8 or 6 digits at end of line)
+                        hsn = ""
+                        for part in reversed(parts):  # Start from the end
+                            if re.match(r'^\d{6,8}$', part):
+                                hsn = part
+                                break
                         
-                        # Look for HSN code (8-digit number)
-                        hsn_match = re.search(r'(\d{8})', line)
-                        if hsn_match:
-                            hsn = hsn_match.group(1)
+                        # Find quantity (look for patterns like "6 NOS")
+                        quantity = ""
+                        qty_match = re.search(r'(\d+\s+NOS)', line)
+                        if qty_match:
+                            quantity = qty_match.group(1)
                         
-                        # Look for rate (typically between amount and quantity)
-                        if amount:
-                            amount_pos = line.find(amount)
-                            after_amount = line[amount_pos + len(amount):]
-                            rate_match = re.search(r'NOS([\d,.]+\.\d{2})', after_amount)
+                        # Find rate (typically after "NOS")
+                        rate = ""
+                        if amount and "NOS" in line:
+                            rate_match = re.search(r'NOS([\d,.]+\.\d{2})', line)
                             if rate_match:
                                 rate = rate_match.group(1)
                         
@@ -554,36 +508,25 @@ def extract_items_from_pdf(file_path):
                             'file_name': file_name,
                             'invoice_number': invoice_number,
                             'item_no': item_no.strip(),
-                            'description': desc.strip(),
+                            'description': description.strip(),
                             'amount': amount.strip(),
-                            'rate': rate.strip(),
-                            'quantity': quantity.strip(),
-                            'hsn_sac': hsn.strip()
+                            'rate': rate.strip() if rate else "",
+                            'quantity': quantity.strip() if quantity else "",
+                            'hsn_sac': hsn.strip() if hsn else ""
                         })
+                        processed_item_numbers.add(item_no)
     
-    # Clean up any items with missing values
-    filtered_items = []
-    for item in items:
-        # Keep only items that have at least item number and description
-        if item['item_no'] and item['description']:
-            # Try to improve HSN/SAC extraction
-            if not item['hsn_sac'] and 'description' in item:
-                hsn_match = re.search(r'(\d{8})', item['description'])
-                if hsn_match:
-                    item['hsn_sac'] = hsn_match.group(1)
-                    # Remove the HSN from description if it was there
-                    item['description'] = re.sub(r'\s+\d{8}\s*$', '', item['description'])
-                    
-            filtered_items.append(item)
+    # Sort items by item number (to ensure correct order)
+    items.sort(key=lambda x: int(x['item_no']))
     
     # Debug output
     print("\n--- Extracted Item Details ---")
-    print(f"Found {len(filtered_items)} items")
-    for item in filtered_items:
+    print(f"Found {len(items)} items")
+    for item in items:
         print(f"Item {item['item_no']}: {item['description']} - {item['amount']}")
     print("----------------------------\n")
     
-    return filtered_items
+    return items
 
 # === PROCESS PDF AND WRITE TO CSV ===
 def process_pdf(file_path):
