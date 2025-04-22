@@ -509,17 +509,26 @@ def extract_items_from_pdf(file_path):
                     full_description = re.sub(r'\s+', ' ', full_description).strip()
                     # --- END MODIFIED CLEANING ---
 
-                    # Handle case where we have amount and rate
+                    # Handle rate and amount based on whether it's a service item
                     rate = ""
                     amount = ""
-                    
-                    if len(decimal_numbers) >= 2:
-                        amount = decimal_numbers[0]  # First number is amount
-                        rate = decimal_numbers[1]    # Second number is rate
-                    elif len(decimal_numbers) == 1:
-                        # Service items might only have one decimal number (the amount)
-                        amount = decimal_numbers[0]
-                    
+
+                    # Check if it's a service item (no quantity extracted)
+                    if not qty_value: # Treat as service item if qty_value is empty
+                        if len(decimal_numbers) >= 1:
+                            amount = decimal_numbers[0] # Assign the first (only) number to amount
+                            rate = ""                   # Rate is blank for service items
+                    else: # Treat as regular item (apply original swap logic)
+                        if len(decimal_numbers) >= 2:
+                            # Original logic assumed first decimal was amount, second was rate, then swapped
+                            # Let's apply that swap directly:
+                            rate = decimal_numbers[0]    # First decimal is Rate (after swap)
+                            amount = decimal_numbers[1]  # Second decimal is Amount (after swap)
+                        elif len(decimal_numbers) == 1:
+                            # If only one number for regular item, assume it's rate (following swap logic)
+                            rate = decimal_numbers[0]
+                            amount = ""
+
                     items.append({
                         'file_name': file_name,
                         'invoice_number': invoice_number,
@@ -527,8 +536,8 @@ def extract_items_from_pdf(file_path):
                         'description': full_description,
                         'qty_value': qty_value,
                         'qty_unit': qty_unit,
-                        'rate': amount,  # SWAPPED: Using amount as rate (as in original code)
-                        'amount': rate,  # SWAPPED: Using rate as amount (as in original code)
+                        'rate': rate,    # Rate assigned based on logic above
+                        'amount': amount,  # Amount assigned based on logic above
                         'hsn_sac': hsn
                     })
                     processed_item_numbers.add(item_no)
