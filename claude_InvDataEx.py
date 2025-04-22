@@ -487,23 +487,28 @@ def extract_items_from_pdf(file_path):
                     
                     # Join all description lines
                     full_description = ' '.join(description_lines)
-                    
-                    # Clean up the description
-                    # Remove HSN code
-                    if hsn:
-                        full_description = re.sub(rf'\s*{hsn}\s*', ' ', full_description)
-                    
-                    # Remove quantity and unit info
-                    if qty_value and qty_unit:
-                        full_description = re.sub(rf'\s*{qty_value}\s*{qty_unit}\s*', ' ', full_description)
-                    
-                    # Remove rate and amount values
-                    for value in decimal_numbers:
+
+                    # --- START MODIFIED CLEANING ---
+                    # Remove HSN code (6-8 digits, word boundary)
+                    full_description = re.sub(r'\b\d{6,8}\b', '', full_description)
+
+                    # Remove Unit (e.g., NOS, word boundary) - Add other units if needed
+                    full_description = re.sub(r'\bNOS\b', '', full_description, flags=re.IGNORECASE) # Case-insensitive
+
+                    # Remove rate and amount values (find again in full description)
+                    # This helps clean up stray numbers that might be part of the description text initially
+                    all_decimal_numbers = re.findall(r'([\d,.]+\.\d{2})', full_description)
+                    for value in all_decimal_numbers:
                         full_description = full_description.replace(value, '')
-                    
-                    # Clean up spaces
+
+                    # Remove quantity value if it was extracted and might be left
+                    if qty_value:
+                        full_description = re.sub(rf'\b{qty_value}\b', '', full_description)
+
+                    # Clean up extra spaces resulting from removals
                     full_description = re.sub(r'\s+', ' ', full_description).strip()
-                    
+                    # --- END MODIFIED CLEANING ---
+
                     # Handle case where we have amount and rate
                     rate = ""
                     amount = ""
