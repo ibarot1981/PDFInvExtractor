@@ -413,28 +413,41 @@ def extract_items_from_pdf(file_path):
                     item_end_idx = len(lines)
                 
                 # Process item lines for this page
-                for idx in range(item_start_idx, item_end_idx):
+                idx = item_start_idx
+                while idx < item_end_idx:
                     line = lines[idx].strip()
                     
                     # Skip empty lines or table headers
                     if not line or line.startswith("Sl") or line.startswith("No."):
+                        idx += 1
                         continue
                     
                     # Check if line starts with a number (potential item number)
                     item_num_match = re.match(r'^(\d+)\s+', line)
                     if not item_num_match:
+                        idx += 1
                         continue
                     
                     item_no = item_num_match.group(1).strip()
                     
                     # Skip if we've already processed this item number
                     if item_no in processed_item_numbers:
+                        idx += 1
                         continue
                     
                     # Print for debugging
-                    print(f"Processing line: {line}")
+                    print(f"Processing item line: {line}")
                     
-                    # Find decimal numbers for amount and rate
+                    # Start building the description
+                    main_line = line
+                    description_lines = []
+                    
+                    # Extract the start of description (everything after item number)
+                    if item_num_match:
+                        initial_description = line[len(item_num_match.group(0)):].strip()
+                        description_lines.append(initial_description)
+                    
+                    # Find all decimal numbers for amount and rate
                     decimal_numbers = re.findall(r'([\d,.]+\.\d{2})', line)
                     
                     # Find HSN code (typically an 8-digit number at end of line)
@@ -446,73 +459,77 @@ def extract_items_from_pdf(file_path):
                     qty_value = qty_match.group(1) if qty_match else ""
                     qty_unit = "NOS" if qty_match else ""
                     
-                    # Handle service items (like "Interstate Repairs")
-                    if "Interstate Repairs" in line or len(decimal_numbers) == 1:
-                        # Service items might only have one decimal number (the amount)
-                        amount = decimal_numbers[0] if decimal_numbers else ""
-                        rate = ""
+                    # Look ahead for additional description lines
+                    next_idx = idx + 1
+                    while next_idx < item_end_idx:
+                        next_line = lines[next_idx].strip()
                         
-                        # Extract description (remove item number from beginning)
-                        description = line[len(item_no):].strip()
+                        # Break if we find a line that starts with an item number
+                        if re.match(r'^\d+\s+', next_line):
+                            break
                         
-                        # If we have an amount, remove it from description
-                        if amount:
-                            description = description.replace(amount, "").strip()
+                        # Break if we find an end marker
+                        if ("Amount Chargeable" in next_line or 
+                            "Total" in next_line or 
+                            "continued to page" in next_line or
+                            "SUBJECT TO" in next_line):
+                            break
                         
-                        # If we have HSN, remove it from description
-                        if hsn:
-                            description = re.sub(rf'\s*{hsn}\s*$', '', description)
+                        # Skip empty lines
+                        if not next_line:
+                            next_idx += 1
+                            continue
                         
-                        items.append({
-                            'file_name': file_name,
-                            'invoice_number': invoice_number,
-                            'item_no': item_no,
-                            'description': description.strip(),
-                            'qty_value': qty_value,
-                            'qty_unit': qty_unit,
-                            'rate': "",
-                            'amount': amount,
-                            'hsn_sac': hsn
-                        })
-                        processed_item_numbers.add(item_no)
-                        continue
+                        # This is a continuation line - add to description
+                        print(f"Adding description line: {next_line}")
+                        description_lines.append(next_line)
+                        next_idx += 1
                     
-                    # Regular items with amount and rate
+                    # Join all description lines
+                    full_description = ' '.join(description_lines)
+                    
+                    # Clean up the description
+                    # Remove HSN code
+                    if hsn:
+                        full_description = re.sub(rf'\s*{hsn}\s*', ' ', full_description)
+                    
+                    # Remove quantity and unit info
+                    if qty_value and qty_unit:
+                        full_description = re.sub(rf'\s*{qty_value}\s*{qty_unit}\s*', ' ', full_description)
+                    
+                    # Remove rate and amount values
+                    for value in decimal_numbers:
+                        full_description = full_description.replace(value, '')
+                    
+                    # Clean up spaces
+                    full_description = re.sub(r'\s+', ' ', full_description).strip()
+                    
+                    # Handle case where we have amount and rate
+                    rate = ""
+                    amount = ""
+                    
                     if len(decimal_numbers) >= 2:
                         amount = decimal_numbers[0]  # First number is amount
                         rate = decimal_numbers[1]    # Second number is rate
-                        
-                        # Extract the raw description (everything after item number)
-                        raw_description = line[len(item_no):].strip()
-                        
-                        # Extract the position of the first decimal number (amount)
-                        amount_pos = raw_description.find(amount)
-                        if amount_pos > 0:
-                            # Get text from start to before first decimal number
-                            description = raw_description[:amount_pos].strip()
-                        else:
-                            # Fallback: just get first part of the description
-                            description_parts = raw_description.split()
-                            description = ' '.join(description_parts[:3] if len(description_parts) > 3 else description_parts)
-                        
-                        # Clean up the description - remove HSN, Qty, Unit info
-                        # Remove HSN code pattern
-                        description = re.sub(r'\s+\d{6,8}\b', '', description)
-                        # Remove quantity and NOS pattern
-                        description = re.sub(r'\s+\d+\s+NOS\b', '', description)
-                        
-                        items.append({
-                            'file_name': file_name,
-                            'invoice_number': invoice_number,
-                            'item_no': item_no,
-                            'description': description.strip(),
-                            'qty_value': qty_value,
-                            'qty_unit': qty_unit,
-                            'rate': amount,  # SWAPPED: Using amount as rate
-                            'amount': rate,  # SWAPPED: Using rate as amount
-                            'hsn_sac': hsn
-                        })
-                        processed_item_numbers.add(item_no)
+                    elif len(decimal_numbers) == 1:
+                        # Service items might only have one decimal number (the amount)
+                        amount = decimal_numbers[0]
+                    
+                    items.append({
+                        'file_name': file_name,
+                        'invoice_number': invoice_number,
+                        'item_no': item_no,
+                        'description': full_description,
+                        'qty_value': qty_value,
+                        'qty_unit': qty_unit,
+                        'rate': amount,  # SWAPPED: Using amount as rate (as in original code)
+                        'amount': rate,  # SWAPPED: Using rate as amount (as in original code)
+                        'hsn_sac': hsn
+                    })
+                    processed_item_numbers.add(item_no)
+                    
+                    # Move to the next item after processing this one and its continuations
+                    idx = next_idx
     
     # Sort items by item number (to ensure correct order)
     items.sort(key=lambda x: int(x['item_no']))
