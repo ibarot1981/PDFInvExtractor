@@ -505,7 +505,14 @@ def extract_items_from_pdf(file_path):
                     if qty_value:
                         full_description = re.sub(rf'\b{qty_value}\b', '', full_description)
 
-                    # Clean up extra spaces resulting from removals
+                    # --- START TAX INFO REMOVAL ---
+                    # Remove patterns like "Output IGST-18% 18 %" or "Output CGST 9% 9 % Output SGST 9% 9 %"
+                    full_description = re.sub(r'Output\s+IGST\s*[-\d.% ]+', '', full_description, flags=re.IGNORECASE)
+                    full_description = re.sub(r'Output\s+CGST\s*[-\d.% ]+', '', full_description, flags=re.IGNORECASE)
+                    full_description = re.sub(r'Output\s+SGST\s*[-\d.% ]+', '', full_description, flags=re.IGNORECASE)
+                    # --- END TAX INFO REMOVAL ---
+
+                    # Clean up extra spaces resulting from all removals
                     full_description = re.sub(r'\s+', ' ', full_description).strip()
                     # --- END MODIFIED CLEANING ---
 
