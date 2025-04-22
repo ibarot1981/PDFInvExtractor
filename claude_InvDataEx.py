@@ -431,94 +431,123 @@ def extract_items_from_pdf(file_path):
                     if item_no in processed_item_numbers:
                         continue
                     
-                    # Try to match different item formats
+                    # Try to parse using the PDF's specific format
+                    # The actual format in the PDF:
+                    # [item_no] [description] [amount] NOS[rate] [quantity] NOS [hsn]
                     
-                    # Format 1: Regular product lines 
-                    # Example: "1 PARTS OF MINI CRANE Circlip 30 mm 200.00 NOS33.33 6 NOS 84314990"
-                    item_match = re.match(r'^(\d+)\s+(PARTS\s+OF\s+[^\d]+)[\s]*([\d,.]+\.\d{2})\s+NOS([\d,.]+\.\d{2})\s+(\d+)\s+NOS\s+(\d+)$', line)
+                    # Print for debugging
+                    print(f"Processing line: {line}")
                     
-                    if item_match:
-                        item_no, desc_base, amount, rate, qty_value, hsn = item_match.groups()
-                        
-                        # Extract full description including part name
-                        part_name = ""
-                        
-                        # Find where the description ends (where numbers begin)
-                        for part in line.split()[2:]:  # Skip item number and "PARTS"
-                            if re.match(r'^[\d,.]+\.\d{2}$', part):
-                                break
-                            if "PARTS OF" not in part:  # Don't add "PARTS OF" twice
-                                part_name += " " + part
-                        
-                        full_desc = desc_base.strip() + part_name.strip()
-                        
-                        items.append({
-                            'file_name': file_name,
-                            'invoice_number': invoice_number,
-                            'item_no': item_no.strip(),
-                            'description': full_desc.strip(),
-                            'qty_value': qty_value.strip(),
-                            'qty_unit': 'NOS',  # Extracted unit
-                            'rate': rate.strip(),
-                            'amount': amount.strip(),
-                            'hsn_sac': hsn.strip()
-                        })
-                        processed_item_numbers.add(item_no)
-                        continue
+                    # Regular PARTS items
+                    if "PARTS OF MINI CRANE" in line:
+                        # First, extract the item number and description
+                        desc_match = re.match(r'^(\d+)\s+(PARTS OF MINI CRANE\s+[^0-9]+)', line)
+                        if desc_match:
+                            item_no = desc_match.group(1)
+                            description = desc_match.group(2).strip()
+                            
+                            # Now extract the numeric values in order - the formatting is very specific
+                            # First number is amount, then "NOS" with rate attached, then quantity
+                            values = re.findall(r'([\d,.]+\.\d{2})', line)
+                            if len(values) >= 2:
+                                amount = values[0]  # First number is amount
+                                rate = values[1]    # Second number is rate
+                                
+                                # Extract quantity
+                                qty_match = re.search(r'(\d+)\s+NOS\s+\d+$', line)
+                                if qty_match:
+                                    qty_value = qty_match.group(1)
+                                else:
+                                    qty_value = ""
+                                
+                                # Extract HSN code (typically at the end of line)
+                                hsn_match = re.search(r'(\d{8})$', line)
+                                if hsn_match:
+                                    hsn = hsn_match.group(1)
+                                else:
+                                    hsn = ""
+                                
+                                items.append({
+                                    'file_name': file_name,
+                                    'invoice_number': invoice_number,
+                                    'item_no': item_no.strip(),
+                                    'description': description.strip(),
+                                    'qty_value': qty_value.strip() if qty_value else "",
+                                    'qty_unit': "NOS",
+                                    'rate': rate.strip() if rate else "",
+                                    'amount': amount.strip() if amount else "",
+                                    'hsn_sac': hsn.strip() if hsn else ""
+                                })
+                                processed_item_numbers.add(item_no)
+                                continue
                     
-                    # Format 2: Service items and other formats
-                    # Use a more flexible approach that extracts what's available
+                    # Service items (like item 27 in the sample)
+                    if "Interstate Repairs" in line:
+                        # Extract description and amount for service items
+                        service_match = re.match(r'^(\d+)\s+(Interstate[^0-9]+)([\d,.]+\.\d{2})\s+(\d+)$', line)
+                        if service_match:
+                            item_no = service_match.group(1)
+                            description = service_match.group(2).strip()
+                            amount = service_match.group(3)
+                            hsn = service_match.group(4)
+                            
+                            items.append({
+                                'file_name': file_name,
+                                'invoice_number': invoice_number,
+                                'item_no': item_no.strip(),
+                                'description': description.strip(),
+                                'qty_value': "",
+                                'qty_unit': "",
+                                'rate': "",
+                                'amount': amount.strip(),
+                                'hsn_sac': hsn.strip()
+                            })
+                            processed_item_numbers.add(item_no)
+                            continue
+                    
+                    # Fall back to a more generic approach
                     parts = line.split()
                     
-                    if len(parts) >= 3:  # Need at least item number, some description, and value
+                    if len(parts) >= 3:  # Need at least item number, some description, and amount
                         item_no = parts[0]
                         
-                        # Find amount (look for decimal number pattern)
-                        amount = ""
-                        amount_pos = -1
-                        for i, part in enumerate(parts):
-                            if re.match(r'^[\d,.]+\.\d{2}$', part):
-                                amount = part
-                                amount_pos = i
-                                break
+                        # Find the decimal numbers in the line
+                        decimal_numbers = re.findall(r'([\d,.]+\.\d{2})', line)
                         
-                        # Extract description (everything before the amount)
-                        description = ' '.join(parts[1:amount_pos]) if amount_pos > 1 else ' '.join(parts[1:3])
-                        
-                        # Find HSN/SAC (typically 8 or 6 digits at end of line)
-                        hsn = ""
-                        for part in reversed(parts):  # Start from the end
-                            if re.match(r'^\d{6,8}$', part):
-                                hsn = part
-                                break
-                        
-                        # Find quantity - separate value and unit
-                        qty_value = ""
-                        qty_unit = ""
-                        qty_match = re.search(r'(\d+)\s+(NOS)', line)
-                        if qty_match:
-                            qty_value = qty_match.group(1)
-                            qty_unit = qty_match.group(2)
-                        
-                        # Find rate (typically after "NOS")
-                        rate = ""
-                        if amount and "NOS" in line:
-                            rate_match = re.search(r'NOS([\d,.]+\.\d{2})', line)
-                            if rate_match:
-                                rate = rate_match.group(1)
-                        
-                        items.append({
-                            'file_name': file_name,
-                            'invoice_number': invoice_number,
-                            'item_no': item_no.strip(),
-                            'description': description.strip(),
-                            'qty_value': qty_value.strip() if qty_value else "",
-                            'qty_unit': qty_unit.strip() if qty_unit else "",
-                            'rate': rate.strip() if rate else "",
-                            'amount': amount.strip(),
-                            'hsn_sac': hsn.strip() if hsn else ""
-                        })
-                        processed_item_numbers.add(item_no)
+                        if len(decimal_numbers) >= 1:
+                            amount = decimal_numbers[0]  # First number is typically amount
+                            rate = decimal_numbers[1] if len(decimal_numbers) > 1 else ""
+                            
+                            # Find HSN code (last 8-digit number)
+                            hsn_match = re.search(r'(\d{6,8})$', line)
+                            hsn = hsn_match.group(1) if hsn_match else ""
+                            
+                            # Check for quantities
+                            qty_match = re.search(r'(\d+)\s+NOS', line)
+                            qty_value = qty_match.group(1) if qty_match else ""
+                            
+                            # Extract description (everything between item number and first value)
+                            desc_end = line.find(amount)
+                            if desc_end > 0:
+                                # Get text from after item number to before first value
+                                start_pos = len(item_no) + 1  # +1 for the space after item number
+                                description = line[start_pos:desc_end].strip()
+                            else:
+                                # If we can't find a good split, just take first few parts
+                                description = ' '.join(parts[1:3])
+                            
+                            items.append({
+                                'file_name': file_name,
+                                'invoice_number': invoice_number,
+                                'item_no': item_no.strip(),
+                                'description': description.strip(),
+                                'qty_value': qty_value.strip() if qty_value else "",
+                                'qty_unit': "NOS" if qty_value else "",
+                                'rate': rate.strip() if rate else "",
+                                'amount': amount.strip() if amount else "",
+                                'hsn_sac': hsn.strip() if hsn else ""
+                            })
+                            processed_item_numbers.add(item_no)
     
     # Sort items by item number (to ensure correct order)
     items.sort(key=lambda x: int(x['item_no']))
