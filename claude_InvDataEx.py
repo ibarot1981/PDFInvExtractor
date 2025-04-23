@@ -436,105 +436,149 @@ def extract_items_from_pdf(file_path):
                         continue
                     
                     # Print for debugging
-                    print(f"Processing item line: {line}")
-                    
-                    # Start building the description
-                    main_line = line
+                    print(f"Processing potential item line: {line}")
+
+                    # --- Initial analysis of the main line ---
+                    main_line_hsn_match = re.search(r'(\d{6,8})$', line) # HSN at end
+                    main_line_qty_match = re.search(r'(\d+)\s+NOS', line) # Assuming NOS unit for now
+                    main_line_decimals = re.findall(r'([\d,.]+\.\d{2})', line)
+                    is_service_item = not main_line_qty_match # Tentative: service if no qty on main line
+
+                    # Start building the description from the main line
                     description_lines = []
-                    
-                    # Extract the start of description (everything after item number)
                     if item_num_match:
                         initial_description = line[len(item_num_match.group(0)):].strip()
                         description_lines.append(initial_description)
-                    
-                    # Find all decimal numbers for amount and rate
-                    decimal_numbers = re.findall(r'([\d,.]+\.\d{2})', line)
-                    
-                    # Find HSN code (typically an 8-digit number at end of line)
-                    hsn_match = re.search(r'(\d{6,8})$', line)
-                    hsn = hsn_match.group(1) if hsn_match else ""
-                    
-                    # Find quantity and unit
-                    qty_match = re.search(r'(\d+)\s+NOS', line)
-                    qty_value = qty_match.group(1) if qty_match else ""
-                    qty_unit = "NOS" if qty_match else ""
-                    
-                    # Look ahead for additional description lines
+
+                    # --- Look ahead for additional description lines ---
                     next_idx = idx + 1
                     while next_idx < item_end_idx:
                         next_line = lines[next_idx].strip()
-                        
-                        # Break if we find a line that starts with an item number
-                        if re.match(r'^\d+\s+', next_line):
-                            break
-                        
+
                         # Break if we find an end marker
-                        if ("Amount Chargeable" in next_line or 
-                            "Total" in next_line or 
+                        if ("Amount Chargeable" in next_line or
+                            "Total" in next_line or
                             "continued to page" in next_line or
                             "SUBJECT TO" in next_line):
                             break
-                        
+
                         # Skip empty lines
                         if not next_line:
                             next_idx += 1
                             continue
-                        
-                        # This is a continuation line - add to description
-                        print(f"Adding description line: {next_line}")
-                        description_lines.append(next_line)
-                        next_idx += 1
-                    
+
+                        # Check if the next line starts with a number
+                        next_item_num_match = re.match(r'^\d+\s+', next_line)
+
+                        is_likely_new_item = False
+                        if next_item_num_match:
+                            # Check if this line looks like a *new* item line
+                            next_line_hsn = re.search(r'\b\d{6,8}\b', next_line) # HSN anywhere
+                            next_line_qty = re.search(r'\d+\s+NOS', next_line) # Qty anywhere
+                            next_line_decimals = re.findall(r'([\d,.]+\.\d{2})', next_line)
+
+                            # Conditions for being a new item line:
+                            # 1. Has HSN?
+                            # 2. Has Qty?
+                            # 3. Has at least two decimal numbers (likely rate/amount)?
+                            if next_line_hsn or next_line_qty or len(next_line_decimals) >= 2:
+                                is_likely_new_item = True
+                                # Optional: Add check for sequential item number?
+                                # try:
+                                #     if int(next_item_num_match.group(1)) > int(item_no):
+                                #         is_likely_new_item = True
+                                # except ValueError:
+                                #     pass # Ignore if conversion fails
+
+                        if is_likely_new_item:
+                            print(f"Detected likely new item line: {next_line}. Stopping description.")
+                            break # Stop accumulating description, it's a new item
+                        else:
+                            # --- ADDED TAX AND TOTAL LINE CHECKS ---
+                            # Check 1: Does the line look like a tax line (CGST, SGST, IGST)?
+                            is_tax_line = re.search(r'(Output\s+)?(CGST|SGST|IGST)', next_line, re.IGNORECASE)
+
+                            # Check 2: Does the line look like *only* a total amount?
+                            # Heuristic: Remove "Total" keyword (case-insensitive) and surrounding whitespace.
+                            # Check if the *entire remaining string* is just a decimal number.
+                            potential_total_text = re.sub(r'\bTotal\b', '', next_line, flags=re.IGNORECASE).strip()
+                            # Allow for optional currency symbols or leading/trailing punctuation sometimes seen near totals
+                            potential_total_text = re.sub(r'^[^\d]+|[^\d]+$', '', potential_total_text).strip() 
+                            is_likely_total_line = re.fullmatch(r'[\d,.]+\.\d{2}', potential_total_text)
+
+                            if is_tax_line:
+                                print(f"Detected tax line: {next_line}. Stopping description.")
+                                break # Stop accumulating description before adding tax line
+                            elif is_likely_total_line:
+                                 print(f"Detected likely total line: {next_line}. Stopping description.")
+                                 break # Stop accumulating description before adding total line
+                            # --- END TAX AND TOTAL LINE CHECKS ---
+
+                            # This is a continuation line (passes all checks)
+                            print(f"Adding description line: {next_line}")
+                            description_lines.append(next_line)
+                            next_idx += 1
+
+                    # --- After the inner while loop ---
+
                     # Join all description lines
                     full_description = ' '.join(description_lines)
 
-                    # --- START MODIFIED CLEANING ---
-                    # Remove HSN code (6-8 digits, word boundary)
+                    # --- Perform cleaning on full_description ---
+                    # Use the HSN/Qty/Decimals found on the *main line* for final assignment and cleaning
+
+                    # Extract final values from main line analysis
+                    hsn = main_line_hsn_match.group(1) if main_line_hsn_match else ""
+                    qty_value = main_line_qty_match.group(1) if main_line_qty_match else ""
+                    qty_unit = "NOS" if main_line_qty_match else ""
+
+                    # Remove HSN code from description
+                    if hsn:
+                        full_description = re.sub(rf'\b{hsn}\b', '', full_description)
+                    # Also remove any other HSN-like numbers that might be in description text
                     full_description = re.sub(r'\b\d{6,8}\b', '', full_description)
 
-                    # Remove Unit (e.g., NOS, word boundary) - Add other units if needed
-                    full_description = re.sub(r'\bNOS\b', '', full_description, flags=re.IGNORECASE) # Case-insensitive
+                    # Remove Unit from description
+                    if qty_unit:
+                        full_description = re.sub(r'\bNOS\b', '', full_description, flags=re.IGNORECASE)
 
-                    # Remove rate and amount values (find again in full description)
-                    # This helps clean up stray numbers that might be part of the description text initially
-                    all_decimal_numbers = re.findall(r'([\d,.]+\.\d{2})', full_description)
-                    for value in all_decimal_numbers:
-                        full_description = full_description.replace(value, '')
+                    # Remove rate and amount values (using decimals found on main line) from description
+                    for value in main_line_decimals:
+                        # Use regex to avoid replacing parts of other numbers
+                        full_description = re.sub(rf'(?<![\d.,]){re.escape(value)}(?![\d.,])', '', full_description)
 
-                    # Remove quantity value if it was extracted and might be left
+                    # Remove quantity value from description
                     if qty_value:
                         full_description = re.sub(rf'\b{qty_value}\b', '', full_description)
 
                     # --- START TAX INFO REMOVAL ---
-                    # Remove patterns like "Output IGST-18% 18 %" or "Output CGST 9% 9 % Output SGST 9% 9 %"
                     full_description = re.sub(r'Output\s+IGST\s*[-\d.% ]+', '', full_description, flags=re.IGNORECASE)
                     full_description = re.sub(r'Output\s+CGST\s*[-\d.% ]+', '', full_description, flags=re.IGNORECASE)
                     full_description = re.sub(r'Output\s+SGST\s*[-\d.% ]+', '', full_description, flags=re.IGNORECASE)
                     # --- END TAX INFO REMOVAL ---
 
-                    # Clean up extra spaces resulting from all removals
+                    # Clean up extra spaces
                     full_description = re.sub(r'\s+', ' ', full_description).strip()
-                    # --- END MODIFIED CLEANING ---
 
-                    # Handle rate and amount based on whether it's a service item
+                    # --- Assign final rate and amount based on main line analysis ---
                     rate = ""
                     amount = ""
 
-                    # Check if it's a service item (no quantity extracted)
-                    if not qty_value: # Treat as service item if qty_value is empty
-                        if len(decimal_numbers) >= 1:
-                            amount = decimal_numbers[0] # Assign the first (only) number to amount
-                            rate = ""                   # Rate is blank for service items
-                    else: # Treat as regular item (apply original swap logic)
-                        if len(decimal_numbers) >= 2:
-                            # Original logic assumed first decimal was amount, second was rate, then swapped
-                            # Let's apply that swap directly:
-                            rate = decimal_numbers[0]    # First decimal is Rate (after swap)
-                            amount = decimal_numbers[1]  # Second decimal is Amount (after swap)
-                        elif len(decimal_numbers) == 1:
-                            # If only one number for regular item, assume it's rate (following swap logic)
-                            rate = decimal_numbers[0]
-                            amount = ""
+                    if not qty_value: # Treat as service item if no qty on main line
+                        if len(main_line_decimals) >= 1:
+                            # Assume amount is the last decimal on the line for service items
+                            amount = main_line_decimals[-1]
+                            rate = ""
+                    else: # Treat as regular item
+                        if len(main_line_decimals) >= 2:
+                            # Assuming Rate is first, Amount is second on the main line for product items
+                            # (Adjust if this assumption is wrong for your PDFs)
+                            rate = main_line_decimals[0]
+                            amount = main_line_decimals[1]
+                        elif len(main_line_decimals) == 1:
+                            # If only one number for product, assume it's amount
+                            amount = main_line_decimals[0]
+                            rate = ""
 
                     items.append({
                         'file_name': file_name,
@@ -543,15 +587,15 @@ def extract_items_from_pdf(file_path):
                         'description': full_description,
                         'qty_value': qty_value,
                         'qty_unit': qty_unit,
-                        'rate': rate,    # Rate assigned based on logic above
-                        'amount': amount,  # Amount assigned based on logic above
+                        'rate': rate,
+                        'amount': amount,
                         'hsn_sac': hsn
                     })
                     processed_item_numbers.add(item_no)
-                    
-                    # Move to the next item after processing this one and its continuations
+
+                    # Move to the next potential item line
                     idx = next_idx
-    
+
     # Sort items by item number (to ensure correct order)
     items.sort(key=lambda x: int(x['item_no']))
     
