@@ -1,5 +1,0 @@
-great. It gave me a clean extraction. Following was printed in the console : Found date via general pattern: 8-Apr-25
-Now we have a general extraction working, I need the following :
-1. Watchdog functionality to ensure new files are continuously process as well. If the input directory has files before the script was started it should also be processed.
-2. If Consignee has a contact number in its address, it should be captured as a different field "Consignee Contact No". Similarly if it has email address, then it should capture it in "Consignee Email".
-3. Do the same with Buyer as "Buyer Contact No." and "Buyer Email" fields.
