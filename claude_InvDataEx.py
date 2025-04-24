@@ -635,15 +635,23 @@ def process_pdf(file_path):
         # Get the input file name without extension
         input_file_name = os.path.splitext(os.path.basename(file_path))[0]
         
-        # Format the date for the output filename
+        # Format the date for the output filename and MonthYear field
+        month_year = "" # Default value
         try:
             invoice_date_obj = datetime.strptime(header_data['invoice_date'], "%d-%b-%y")
             date_format = invoice_date_obj.strftime("%d-%m-%y")
+            month_year = invoice_date_obj.strftime("%b-%y") # Format as MMM-YY e.g. Apr-25
         except ValueError:
-            print(f"Warning: Invalid invoice date: '{header_data['invoice_date']}'")
-            # Use current date as fallback
-            date_format = datetime.now().strftime("%d-%m-%y")
+            print(f"Warning: Invalid invoice date: '{header_data['invoice_date']}' - Cannot generate MonthYear.")
+            # Use current date as fallback for filename
+            now = datetime.now()
+            date_format = now.strftime("%d-%m-%y")
+            # Keep month_year empty or set a default if needed
+            # month_year = now.strftime("%b-%y") # Optionally use current month/year as fallback
         
+        # Add month_year to the header_data dictionary
+        header_data['month_year'] = month_year
+
         # Create new file names as per requested format
         headers_csv = os.path.join(OUTPUT_DIR, f"{input_file_name}_{date_format}_Header.csv")
         items_csv = os.path.join(OUTPUT_DIR, f"{input_file_name}_{date_format}_Items.csv")
@@ -655,10 +663,10 @@ def process_pdf(file_path):
         with open(headers_csv, 'w', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
             
-            # Write headers
+            # Write headers - Added 'MonthYear'
             writer.writerow([
                 'File Name',
-                'Invoice Number', 'Invoice Date',
+                'Invoice Number', 'Invoice Date', 'MonthYear',
                 'Consignee Name', 'Consignee Address', 'Consignee GSTIN', 'Consignee State', 
                 'Consignee Contact No', 'Consignee Email',
                 'Buyer Name', 'Buyer Address', 'Buyer GSTIN', 'Buyer State',
@@ -666,11 +674,13 @@ def process_pdf(file_path):
                 'Place of Supply', 'Destination'
             ])
             
-            # Write data row
+            # Write data row - Added month_year
+            # Write data row - Access month_year from header_data
             writer.writerow([
                 header_data['file_name'],
                 header_data['invoice_number'],
                 header_data['invoice_date'],
+                header_data['month_year'], # Access MonthYear value from dict
                 header_data['consignee_name'],
                 header_data['consignee_address'],
                 header_data['consignee_gstin'],
