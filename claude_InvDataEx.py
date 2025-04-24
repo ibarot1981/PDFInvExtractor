@@ -608,47 +608,48 @@ def extract_items_from_pdf(file_path):
     
     return items
 
-# === PROCESS PDF AND WRITE TO CSV ===
 def process_pdf(file_path):
     try:
         # Extract header data
         header_data = extract_header_from_pdf(file_path)
         
+        # Get the input file name without extension
+        input_file_name = os.path.splitext(os.path.basename(file_path))[0]
+        
         # Format the date for the output filename
         try:
             invoice_date_obj = datetime.strptime(header_data['invoice_date'], "%d-%b-%y")
-            month_file = invoice_date_obj.strftime("%b%y")
+            date_format = invoice_date_obj.strftime("%d-%m-%y")
         except ValueError:
             print(f"Warning: Invalid invoice date: '{header_data['invoice_date']}'")
-            # Use current month/year as fallback
-            month_file = datetime.now().strftime("%b%y")
+            # Use current date as fallback
+            date_format = datetime.now().strftime("%d-%m-%y")
         
-        headers_csv = os.path.join(OUTPUT_DIR, f"{month_file}Headers.csv")
+        # Create new file names as per requested format
+        headers_csv = os.path.join(OUTPUT_DIR, f"{input_file_name}_{date_format}_Header.csv")
+        items_csv = os.path.join(OUTPUT_DIR, f"{input_file_name}_{date_format}_Items.csv")
         
         # Create output directory if it doesn't exist
         os.makedirs(OUTPUT_DIR, exist_ok=True)
         
-        # Check if the file exists to determine if we need to write headers
-        headers_file_exists = os.path.isfile(headers_csv)
-        
-        with open(headers_csv, 'a', newline='', encoding='utf-8') as f:
+        # For headers file - always write headers since we're creating new files for each PDF
+        with open(headers_csv, 'w', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
             
-            # Write headers if file is new
-            if not headers_file_exists:
-                writer.writerow([
-                    'File Name',  # Added filename as the first field in CSV header
-                    'Invoice Number', 'Invoice Date',
-                    'Consignee Name', 'Consignee Address', 'Consignee GSTIN', 'Consignee State', 
-                    'Consignee Contact No', 'Consignee Email',
-                    'Buyer Name', 'Buyer Address', 'Buyer GSTIN', 'Buyer State',
-                    'Buyer Contact No', 'Buyer Email',
-                    'Place of Supply', 'Destination'
-                ])
+            # Write headers
+            writer.writerow([
+                'File Name',
+                'Invoice Number', 'Invoice Date',
+                'Consignee Name', 'Consignee Address', 'Consignee GSTIN', 'Consignee State', 
+                'Consignee Contact No', 'Consignee Email',
+                'Buyer Name', 'Buyer Address', 'Buyer GSTIN', 'Buyer State',
+                'Buyer Contact No', 'Buyer Email',
+                'Place of Supply', 'Destination'
+            ])
             
             # Write data row
             writer.writerow([
-                header_data['file_name'],  # Added filename as the first field in CSV data
+                header_data['file_name'],
                 header_data['invoice_number'],
                 header_data['invoice_date'],
                 header_data['consignee_name'],
@@ -667,40 +668,36 @@ def process_pdf(file_path):
                 header_data['destination']
             ])
         
-        # Extract and write item details to a separate CSV
+        # Extract item details
         items = extract_items_from_pdf(file_path)
-        items_csv = os.path.join(OUTPUT_DIR, f"{month_file}ItemDetails.csv")
         
-        # Check if the items file exists
-        items_file_exists = os.path.isfile(items_csv)
-        
-        with open(items_csv, 'a', newline='', encoding='utf-8') as f:
+        # For items file - always write headers since we're creating new files for each PDF
+        with open(items_csv, 'w', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
             
-            # Write headers if file is new - UPDATED ORDER
-            if not items_file_exists:
-                writer.writerow([
-                    'File Name', 'Invoice Number', 'Item No', 'Description',
-                    'Quantity', 'Unit', 'Rate', 'Amount', 'HSN/SAC'
-                ])
+            # Write headers
+            writer.writerow([
+                'File Name', 'Invoice Number', 'Item No', 'Description',
+                'Quantity', 'Unit', 'Rate', 'Amount', 'HSN/SAC'
+            ])
             
-            # Write item rows - UPDATED ORDER
+            # Write item rows
             for item in items:
                 writer.writerow([
                     item['file_name'],
                     item['invoice_number'],
                     item['item_no'],
                     item['description'],
-                    item['qty_value'],  # New order: Quantity value
-                    item['qty_unit'],    # New order: Unit
-                    item['rate'],        # New order: Rate
-                    item['amount'],      # New order: Amount
+                    item['qty_value'],
+                    item['qty_unit'],
+                    item['rate'],
+                    item['amount'],
                     item['hsn_sac']
                 ])
         
         print(f"✅ Extracted data from {os.path.basename(file_path)}")
-        print(f"   Headers appended to: {headers_csv}")
-        print(f"   Items appended to: {items_csv}")
+        print(f"   Headers written to: {headers_csv}")
+        print(f"   Items written to: {items_csv}")
         return True
     
     except Exception as e:
