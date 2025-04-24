@@ -579,12 +579,31 @@ def extract_items_from_pdf(file_path):
                             # If only one number for product, assume it's amount
                             amount = main_line_decimals[0]
                             rate = ""
+                    
+                    # Get the first line for the 'Item' field
+                    first_line_item = description_lines[0].strip() if description_lines else ''
+                    # Clean the first line similar to how full_description is cleaned (remove HSN, Qty, Rate, Amount, Tax)
+                    if hsn:
+                        first_line_item = re.sub(rf'\b{hsn}\b', '', first_line_item)
+                    first_line_item = re.sub(r'\b\d{6,8}\b', '', first_line_item) # Remove other HSN-like
+                    if qty_unit:
+                        first_line_item = re.sub(r'\bNOS\b', '', first_line_item, flags=re.IGNORECASE)
+                    for value in main_line_decimals:
+                         first_line_item = re.sub(rf'(?<![\d.,]){re.escape(value)}(?![\d.,])', '', first_line_item)
+                    if qty_value:
+                        first_line_item = re.sub(rf'\b{qty_value}\b', '', first_line_item)
+                    first_line_item = re.sub(r'Output\s+IGST\s*[-\d.% ]+', '', first_line_item, flags=re.IGNORECASE)
+                    first_line_item = re.sub(r'Output\s+CGST\s*[-\d.% ]+', '', first_line_item, flags=re.IGNORECASE)
+                    first_line_item = re.sub(r'Output\s+SGST\s*[-\d.% ]+', '', first_line_item, flags=re.IGNORECASE)
+                    first_line_item = re.sub(r'\s+', ' ', first_line_item).strip()
+
 
                     items.append({
                         'file_name': file_name,
                         'invoice_number': invoice_number,
                         'item_no': item_no,
-                        'description': full_description,
+                        'item': first_line_item, # New field for first line
+                        'description': full_description, # Keep full description
                         'qty_value': qty_value,
                         'qty_unit': qty_unit,
                         'rate': rate,
@@ -675,18 +694,19 @@ def process_pdf(file_path):
         with open(items_csv, 'w', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
             
-            # Write headers
+            # Write headers - Added 'Item' column
             writer.writerow([
-                'File Name', 'Invoice Number', 'Item No', 'Description',
+                'File Name', 'Invoice Number', 'Item No', 'Item', 'Description',
                 'Quantity', 'Unit', 'Rate', 'Amount', 'HSN/SAC'
             ])
             
-            # Write item rows
+            # Write item rows - Added item['item']
             for item in items:
                 writer.writerow([
                     item['file_name'],
                     item['invoice_number'],
                     item['item_no'],
+                    item['item'], # New field value
                     item['description'],
                     item['qty_value'],
                     item['qty_unit'],
