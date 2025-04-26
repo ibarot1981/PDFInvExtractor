@@ -1,0 +1,16 @@
+@echo off
+cd /d C:\path\to\your\project
+
+:: Check if venv exists
+if exist "venv\Scripts\activate.bat" (
+    echo 🔵 Activating virtual environment...
+    call venv\Scripts\activate.bat
+) else (
+    echo ⚪ No virtual environment found. Running with system Python.
+)
+
+:: Start wrapper
+echo 🚀 Starting wrapper.py...
+python wrapper.py
+
+pause

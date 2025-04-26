@@ -1,0 +1,30 @@
+2025-04-26 15:19:22,042 - ERROR - Failed to get Grist column information. Check API key, Doc ID, Table IDs, and network connection. Error: 404 Client Error: Not Found for url: http://safcost.duckdns.org:8484/api/docs/gi1sPNycQAHoMTekxE6QN3/tables/InvoiceMaster%20#%20Table%20for%20_Header.csv%20files/columns
+Traceback (most recent call last):
+  File "D:\Irshad\Dev\Python\InvoiceDataExtractor\grist_uploader.py", line 298, in main
+    header_columns_data = uploader.get_table_columns(header_table_id)
+  File "D:\Irshad\Dev\Python\InvoiceDataExtractor\grist_uploader.py", line 51, in get_table_columns
+    response.raise_for_status()
+  File "D:\Irshad\Dev\Python\InvoiceDataExtractor\venv\lib\site-packages\requests\models.py", line 1024, in raise_for_status
+    raise HTTPError(http_error_msg, response=self)
+requests.exceptions.HTTPError: 404 Client Error: Not Found for url: http://safcost.duckdns.org:8484/api/docs/gi1sPNycQAHoMTekxE6QN3/tables/InvoiceMaster%20#%20Table%20for%20_Header.csv%20files/columns
+. Exiting.
+2025-04-26 15:21:22,950 - ERROR - Failed to get Grist column information. Check API key, Doc ID, Table IDs, and network connection. Error: 404 Client Error: Not Found for url: http://safcost.duckdns.org:8484/api/docs/gi1sPNycQAHoMTekxE6QN3/tables/InvoiceMaster%20#%20Table%20for%20_Header.csv%20files/columns
+Traceback (most recent call last):
+  File "D:\Irshad\Dev\Python\InvoiceDataExtractor\grist_uploader.py", line 298, in main
+    header_columns_data = uploader.get_table_columns(header_table_id)
+  File "D:\Irshad\Dev\Python\InvoiceDataExtractor\grist_uploader.py", line 51, in get_table_columns
+    response.raise_for_status()
+  File "D:\Irshad\Dev\Python\InvoiceDataExtractor\venv\lib\site-packages\requests\models.py", line 1024, in raise_for_status
+    raise HTTPError(http_error_msg, response=self)
+requests.exceptions.HTTPError: 404 Client Error: Not Found for url: http://safcost.duckdns.org:8484/api/docs/gi1sPNycQAHoMTekxE6QN3/tables/InvoiceMaster%20#%20Table%20for%20_Header.csv%20files/columns
+. Exiting.
+2025-04-26 15:23:54,944 - ERROR - Failed to get Grist column information. Check API key, Doc ID, Table IDs, and network connection. Error: 404 Client Error: Not Found for url: http://safcost.duckdns.org:8484/api/docs/gi1sPNycQAHoMTekxE6QN3/tables/InvoiceMaster%20#%20Table%20for%20_Header.csv%20files/columns
+Traceback (most recent call last):
+  File "D:\Irshad\Dev\Python\InvoiceDataExtractor\grist_uploader.py", line 298, in main
+    header_columns_data = uploader.get_table_columns(header_table_id)
+  File "D:\Irshad\Dev\Python\InvoiceDataExtractor\grist_uploader.py", line 51, in get_table_columns
+    response.raise_for_status()
+  File "D:\Irshad\Dev\Python\InvoiceDataExtractor\venv\lib\site-packages\requests\models.py", line 1024, in raise_for_status
+    raise HTTPError(http_error_msg, response=self)
+requests.exceptions.HTTPError: 404 Client Error: Not Found for url: http://safcost.duckdns.org:8484/api/docs/gi1sPNycQAHoMTekxE6QN3/tables/InvoiceMaster%20#%20Table%20for%20_Header.csv%20files/columns
+. Exiting.
