@@ -5,17 +5,45 @@ import traceback
 import time
 import signal
 import sys
+import logging
+from logging.handlers import RotatingFileHandler
 from datetime import datetime
 import pdfplumber
 import shutil
+from dotenv import load_dotenv
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
+# --- Load Environment ---
+load_dotenv()
+
+# --- Setup Rotating Logging ---
+LOG_FILE = os.getenv('CLAUDE_LOG_FILE', 'claude_extractor.log')
+LOG_MAX_BYTES = int(os.getenv('CLAUDE_LOG_MAX_BYTES', 5242880))  # Default 5MB
+LOG_BACKUP_COUNT = int(os.getenv('CLAUDE_LOG_BACKUP_COUNT', 3))  # Default 3 backups
+
+file_handler = RotatingFileHandler(
+    LOG_FILE,
+    maxBytes=LOG_MAX_BYTES,
+    backupCount=LOG_BACKUP_COUNT,
+    encoding='utf-8' # Added encoding
+)
+file_handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
+
+console_handler = logging.StreamHandler(sys.stdout)
+console_handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
+
+logging.basicConfig(
+    level=logging.INFO,
+    handlers=[file_handler, console_handler]
+)
+
 # === CONFIGURATION ===
-INPUT_DIR = 'files/input'
-ARCHIVE_DIR = 'files/archive'
-ERROR_DIR = 'files/error'
-OUTPUT_DIR = 'files/output'
+# Read directory paths from environment variables with defaults
+INPUT_DIR = os.getenv('INPUT_DIR', 'files/input')
+ARCHIVE_DIR = os.getenv('ARCHIVE_DIR', 'files/archive')
+ERROR_DIR = os.getenv('ERROR_DIR', 'files/error')
+OUTPUT_DIR = os.getenv('OUTPUT_DIR', 'files/output')
 
 # === PDF HEADER EXTRACTION FUNCTION ===
 def extract_header_from_pdf(file_path):
@@ -49,11 +77,11 @@ def extract_header_from_pdf(file_path):
         'destination': ''
     }
     
-    # Print all extracted lines for debugging
-    print("\n--- Raw PDF Content ---")
-    for i, line in enumerate(lines):
-        print(f"Line {i}: {line}")
-    print("----------------------\n")
+    # Log raw content for debugging if needed (set level to DEBUG)
+    # logging.debug("\n--- Raw PDF Content ---")
+    # for i, line in enumerate(lines):
+    #     logging.debug(f"Line {i}: {line}")
+    # logging.debug("----------------------\n")
     
     # Find invoice number
     invoice_line_idx = None
@@ -73,7 +101,7 @@ def extract_header_from_pdf(file_path):
             date_match = re.search(r'(\d{1,2}-[A-Za-z]{3}-\d{2})', lines[i])
             if date_match and 'Ack Date' not in lines[i]:
                 header_data['invoice_date'] = date_match.group(1)
-                print(f"Found date near invoice number: {header_data['invoice_date']}")
+                logging.debug(f"Found date near invoice number: {header_data['invoice_date']}")
                 break
     
     # If date not found near invoice, try other approaches
@@ -84,7 +112,7 @@ def extract_header_from_pdf(file_path):
                 date_match = re.search(r'Dated\s+(\d{1,2}-[A-Za-z]{3}-\d{2})', line)
                 if date_match:
                     header_data['invoice_date'] = date_match.group(1)
-                    print(f"Found date via 'Dated' pattern: {header_data['invoice_date']}")
+                    logging.debug(f"Found date via 'Dated' pattern: {header_data['invoice_date']}")
                     break
     
     # Approach 2: If above fails, look for date pattern anywhere near relevant fields
@@ -96,7 +124,7 @@ def extract_header_from_pdf(file_path):
                 # Make sure it's not part of the acknowledgment date
                 if 'Ack Date' not in line:
                     header_data['invoice_date'] = date_match.group(1)
-                    print(f"Found date via general pattern: {header_data['invoice_date']}")
+                    logging.debug(f"Found date via general pattern: {header_data['invoice_date']}")
                     break
     
     # Approach 3: Look specifically near bill of lading
@@ -108,7 +136,7 @@ def extract_header_from_pdf(file_path):
                     date_match = re.search(r'(\d{1,2}-[A-Za-z]{3}-\d{2})', lines[i])
                     if date_match:
                         header_data['invoice_date'] = date_match.group(1)
-                        print(f"Found date near bill of lading: {header_data['invoice_date']}")
+                        logging.debug(f"Found date near bill of lading: {header_data['invoice_date']}")
                         break
                 if header_data['invoice_date']:
                     break
@@ -123,7 +151,7 @@ def extract_header_from_pdf(file_path):
             if dest_match:
                 header_data['destination'] = dest_match.group(1).strip()
                 destination_found = True
-                print(f"Found destination via pattern 1: {header_data['destination']}")
+                logging.debug(f"Found destination via pattern 1: {header_data['destination']}")
                 break
     
     # Method 2: Look for "Destination" word and extract the next part
@@ -141,7 +169,7 @@ def extract_header_from_pdf(file_path):
                             header_data['destination'] = header_data['destination'].split(stop_point)[0].strip()
                     
                     destination_found = True
-                    print(f"Found destination via pattern 2: {header_data['destination']}")
+                    logging.debug(f"Found destination via pattern 2: {header_data['destination']}")
                     break
                 
                 # If not on same line, check the next line
@@ -156,7 +184,7 @@ def extract_header_from_pdf(file_path):
                                 header_data['destination'] = header_data['destination'].split(stop_point)[0].strip()
                         
                         destination_found = True
-                        print(f"Found destination via pattern 3: {header_data['destination']}")
+                        logging.debug(f"Found destination via pattern 3: {header_data['destination']}")
                         break
     
     # Method 3: Look specifically between "Destination" and "Motor Vehicle"
@@ -180,14 +208,14 @@ def extract_header_from_pdf(file_path):
                         if parts:
                             header_data['destination'] = parts.strip(':').strip()
                             destination_found = True
-                            print(f"Found destination via pattern 4: {header_data['destination']}")
+                            logging.debug(f"Found destination via pattern 4: {header_data['destination']}")
                     else:
                         # Destination and Motor Vehicle on different lines
                         dest_text = lines[dest_idx].split('Destination')[1].strip(':').strip()
                         if dest_text:
                             header_data['destination'] = dest_text
                             destination_found = True
-                            print(f"Found destination via pattern 5: {header_data['destination']}")
+                            logging.debug(f"Found destination via pattern 5: {header_data['destination']}")
     
     # Method 4: Look for common destination patterns like "Destination: Mumbai"
     if not destination_found:
@@ -196,7 +224,7 @@ def extract_header_from_pdf(file_path):
             if dest_pattern:
                 header_data['destination'] = dest_pattern.group(1).strip()
                 destination_found = True
-                print(f"Found destination via pattern 6: {header_data['destination']}")
+                logging.debug(f"Found destination via pattern 6: {header_data['destination']}")
                 break
     
     # Find place of supply
@@ -350,10 +378,10 @@ def extract_header_from_pdf(file_path):
                 header_data[key] = re.sub(r'\s*,\s*$', '', header_data[key])
     
     # Debug output
-    print("\n--- Extracted Header Data ---")
+    logging.debug("\n--- Extracted Header Data ---")
     for key, value in header_data.items():
-        print(f"{key}: {value}")
-    print("----------------------------\n")
+        logging.debug(f"{key}: {value}")
+    logging.debug("----------------------------\n")
     
     return header_data
 
@@ -384,7 +412,7 @@ def extract_items_from_pdf(file_path):
             page_text = page.extract_text()
             lines = page_text.splitlines()
             
-            print(f"\nProcessing page {page_num + 1}")
+            logging.debug(f"\nProcessing page {page_num + 1}")
             
             # Find the start and end of item table for this page
             item_start_idx = None
@@ -435,8 +463,8 @@ def extract_items_from_pdf(file_path):
                         idx += 1
                         continue
                     
-                    # Print for debugging
-                    print(f"Processing potential item line: {line}")
+                    # Log for debugging
+                    logging.debug(f"Processing potential item line: {line}")
 
                     # --- Initial analysis of the main line ---
                     main_line_hsn_match = re.search(r'(\d{6,8})$', line) # HSN at end
@@ -491,7 +519,7 @@ def extract_items_from_pdf(file_path):
                                 #     pass # Ignore if conversion fails
 
                         if is_likely_new_item:
-                            print(f"Detected likely new item line: {next_line}. Stopping description.")
+                            logging.debug(f"Detected likely new item line: {next_line}. Stopping description.")
                             break # Stop accumulating description, it's a new item
                         else:
                             # --- ADDED TAX AND TOTAL LINE CHECKS ---
@@ -507,15 +535,15 @@ def extract_items_from_pdf(file_path):
                             is_likely_total_line = re.fullmatch(r'[\d,.]+\.\d{2}', potential_total_text)
 
                             if is_tax_line:
-                                print(f"Detected tax line: {next_line}. Stopping description.")
+                                logging.debug(f"Detected tax line: {next_line}. Stopping description.")
                                 break # Stop accumulating description before adding tax line
                             elif is_likely_total_line:
-                                 print(f"Detected likely total line: {next_line}. Stopping description.")
+                                 logging.debug(f"Detected likely total line: {next_line}. Stopping description.")
                                  break # Stop accumulating description before adding total line
                             # --- END TAX AND TOTAL LINE CHECKS ---
 
                             # This is a continuation line (passes all checks)
-                            print(f"Adding description line: {next_line}")
+                            logging.debug(f"Adding description line: {next_line}")
                             description_lines.append(next_line)
                             next_idx += 1
 
@@ -619,11 +647,11 @@ def extract_items_from_pdf(file_path):
     items.sort(key=lambda x: int(x['item_no']))
     
     # Debug output
-    print("\n--- Extracted Item Details ---")
-    print(f"Found {len(items)} items")
+    logging.debug("\n--- Extracted Item Details ---")
+    logging.debug(f"Found {len(items)} items")
     for item in items:
-        print(f"Item {item['item_no']}: {item['description']} - {item['qty_value']} {item['qty_unit']} - Rate: {item['rate']} - Amount: {item['amount']}")
-    print("----------------------------\n")
+        logging.debug(f"Item {item['item_no']}: {item['description']} - {item['qty_value']} {item['qty_unit']} - Rate: {item['rate']} - Amount: {item['amount']}")
+    logging.debug("----------------------------\n")
     
     return items
 
@@ -642,7 +670,7 @@ def process_pdf(file_path):
             date_format = invoice_date_obj.strftime("%d-%m-%y")
             month_year = invoice_date_obj.strftime("%b-%y") # Format as MMM-YY e.g. Apr-25
         except ValueError:
-            print(f"Warning: Invalid invoice date: '{header_data['invoice_date']}' - Cannot generate MonthYear.")
+            logging.warning(f"Invalid invoice date: '{header_data['invoice_date']}' in file '{file_path}'. Cannot generate MonthYear.")
             # Use current date as fallback for filename
             now = datetime.now()
             date_format = now.strftime("%d-%m-%y")
@@ -725,14 +753,14 @@ def process_pdf(file_path):
                     item['hsn_sac']
                 ])
         
-        print(f"✅ Extracted data from {os.path.basename(file_path)}")
-        print(f"   Headers written to: {headers_csv}")
-        print(f"   Items written to: {items_csv}")
+        logging.info(f"✅ Extracted data from {os.path.basename(file_path)}")
+        logging.info(f"   Headers written to: {headers_csv}")
+        logging.info(f"   Items written to: {items_csv}")
         return True
     
     except Exception as e:
-        print(f"❌ Error processing {file_path}: {e}")
-        traceback.print_exc()
+        logging.error(f"❌ Error processing {file_path}: {e}")
+        logging.exception("Traceback:") # Log the full traceback
         return False
 
 # === FILE MOVING WITH TIMESTAMP ===
@@ -749,16 +777,16 @@ def handle_file(file_path):
     success = process_pdf(file_path)
     if success:
         move_file(file_path, ARCHIVE_DIR)
-        print(f"📦 Archived: {file_path}")
+        logging.info(f"📦 Archived: {file_path}")
     else:
         move_file(file_path, ERROR_DIR)
-        print(f"⚠️ Moved to error folder: {file_path}")
+        logging.warning(f"⚠️ Moved to error folder: {file_path}")
 
 # === PROCESS EXISTING FILES ===
 def process_existing_files():
-    print("🔍 Checking for existing files...")
+    logging.info("🔍 Checking for existing files...")
     if not os.path.exists(INPUT_DIR):
-        print(f"📁 Input directory '{INPUT_DIR}' does not exist. Creating...")
+        logging.info(f"📁 Input directory '{INPUT_DIR}' does not exist. Creating...")
         os.makedirs(INPUT_DIR)
         return
         
@@ -766,21 +794,21 @@ def process_existing_files():
     for filename in os.listdir(INPUT_DIR):
         if filename.lower().endswith('.pdf'):
             file_path = os.path.join(INPUT_DIR, filename)
-            print(f"📄 Processing: {filename}")
+            logging.info(f"📄 Processing existing file: {filename}")
             handle_file(file_path)
             file_count += 1
     
     if file_count > 0:
-        print(f"✅ Processed {file_count} existing PDF files")
+        logging.info(f"✅ Processed {file_count} existing PDF files")
     else:
-        print("📭 No PDF files found in input directory")
+        logging.info("📭 No existing PDF files found in input directory")
 
 # === WATCHDOG EVENT HANDLER ===
 class PDFHandler(FileSystemEventHandler):
     def on_created(self, event):
         # Only process files, not directories
         if not event.is_directory and event.src_path.lower().endswith('.pdf'):
-            print(f"🔔 New file detected: {event.src_path}")
+            logging.info(f"🔔 New file detected: {event.src_path}")
             
             # Wait a moment to ensure the file is completely written
             # Some applications may write files in chunks
@@ -788,16 +816,17 @@ class PDFHandler(FileSystemEventHandler):
             
             # Check if file still exists (it might have been moved by another process)
             if os.path.exists(event.src_path):
-                print(f"📄 Processing: {os.path.basename(event.src_path)}")
+                logging.info(f"📄 Processing new file: {os.path.basename(event.src_path)}")
                 handle_file(event.src_path)
             else:
-                print(f"⚠️ File no longer exists: {event.src_path}")
+                logging.warning(f"⚠️ File no longer exists before processing could start: {event.src_path}")
 
 # === SIGNAL HANDLER FOR GRACEFUL EXIT ===
 def signal_handler(sig, frame):
-    print("\n🛑 Stopping PDF invoice monitoring (Ctrl+C pressed)")
+    logging.info("\n🛑 Stopping PDF invoice monitoring (Ctrl+C pressed)")
     observer.stop()
     observer.join()
+    logging.info("Observer stopped.")
     sys.exit(0)
 
 # === MAIN ===
@@ -806,11 +835,11 @@ if __name__ == "__main__":
     for directory in [INPUT_DIR, ARCHIVE_DIR, ERROR_DIR, OUTPUT_DIR]:
         os.makedirs(directory, exist_ok=True)
     
-    print("🚀 PDF Invoice Header Extractor with Watchdog")
-    print(f"📁 Input Directory: {INPUT_DIR}")
-    print(f"📁 Output Directory: {OUTPUT_DIR}")
-    print(f"📁 Archive Directory: {ARCHIVE_DIR}")
-    print(f"📁 Error Directory: {ERROR_DIR}")
+    logging.info("🚀 PDF Invoice Header Extractor with Watchdog")
+    logging.info(f"📁 Input Directory: {INPUT_DIR}")
+    logging.info(f"📁 Output Directory: {OUTPUT_DIR}")
+    logging.info(f"📁 Archive Directory: {ARCHIVE_DIR}")
+    logging.info(f"📁 Error Directory: {ERROR_DIR}")
     
     # Process any existing files first
     process_existing_files()
@@ -824,8 +853,8 @@ if __name__ == "__main__":
     signal.signal(signal.SIGINT, signal_handler)
     
     # Start the observer
-    print("\n👀 Watching for new PDF files in input directory...")
-    print("⌨️  Press Ctrl+C to stop monitoring\n")
+    logging.info("\n👀 Watching for new PDF files in input directory...")
+    logging.info("⌨️  Press Ctrl+C to stop monitoring\n")
     
     observer.start()
     
@@ -835,8 +864,8 @@ if __name__ == "__main__":
             time.sleep(1)
     except KeyboardInterrupt:
         # This is a backup in case the signal handler doesn't catch it
-        print("\n🛑 Stopping PDF invoice monitoring (Ctrl+C pressed)")
+        logging.info("\n🛑 Stopping PDF invoice monitoring (KeyboardInterrupt)")
         observer.stop()
     
     observer.join()
-    print("✨ Monitoring stopped. Goodbye!")
+    logging.info("✨ Monitoring stopped. Goodbye!")

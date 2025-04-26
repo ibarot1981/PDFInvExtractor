@@ -1,0 +1,78 @@
+2025-04-26 22:23:43,173 - INFO - 🚀 PDF Invoice Header Extractor with Watchdog
+2025-04-26 22:23:43,174 - INFO - 📁 Input Directory: files/input
+2025-04-26 22:23:43,174 - INFO - 📁 Output Directory: files/output
+2025-04-26 22:23:43,175 - INFO - 📁 Archive Directory: files/archive
+2025-04-26 22:23:43,175 - INFO - 📁 Error Directory: files/error
+2025-04-26 22:23:43,175 - INFO - 🔍 Checking for existing files...
+2025-04-26 22:23:43,176 - INFO - 📭 No existing PDF files found in input directory
+2025-04-26 22:23:43,176 - INFO - 
+👀 Watching for new PDF files in input directory...
+2025-04-26 22:23:43,177 - INFO - ⌨️  Press Ctrl+C to stop monitoring
+
+2025-04-26 22:24:25,830 - INFO - 🔔 New file detected: files/input\LAKHANI BHAVIN (1).pdf
+2025-04-26 22:24:26,849 - INFO - 📄 Processing new file: LAKHANI BHAVIN (1).pdf
+2025-04-26 22:24:27,398 - INFO - ✅ Extracted data from LAKHANI BHAVIN (1).pdf
+2025-04-26 22:24:27,398 - INFO -    Headers written to: files/output\LAKHANI BHAVIN (1)_12-04-25_Header.csv
+2025-04-26 22:24:27,399 - INFO -    Items written to: files/output\LAKHANI BHAVIN (1)_12-04-25_Items.csv
+2025-04-26 22:24:27,400 - INFO - 📦 Archived: files/input\LAKHANI BHAVIN (1).pdf
+2025-04-26 22:24:27,401 - INFO - 🔔 New file detected: files/input\multipagesample.pdf
+2025-04-26 22:24:28,405 - INFO - 📄 Processing new file: multipagesample.pdf
+2025-04-26 22:24:28,422 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-26 22:24:28,423 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-26 22:24:28,624 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-26 22:24:28,626 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-26 22:24:28,629 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-26 22:24:28,630 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-26 22:24:28,915 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-26 22:24:28,915 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-26 22:24:28,916 - INFO - ✅ Extracted data from multipagesample.pdf
+2025-04-26 22:24:28,917 - INFO -    Headers written to: files/output\multipagesample_08-04-25_Header.csv
+2025-04-26 22:24:28,917 - INFO -    Items written to: files/output\multipagesample_08-04-25_Items.csv
+2025-04-26 22:24:28,918 - INFO - 📦 Archived: files/input\multipagesample.pdf
+2025-04-26 22:24:28,919 - INFO - 🔔 New file detected: files/input\SC10034-25-26- NK INFRA.pdf
+2025-04-26 22:24:29,927 - INFO - 📄 Processing new file: SC10034-25-26- NK INFRA.pdf
+2025-04-26 22:24:29,942 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-26 22:24:30,092 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-26 22:24:30,095 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-26 22:24:30,229 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-26 22:24:30,230 - INFO - ✅ Extracted data from SC10034-25-26- NK INFRA.pdf
+2025-04-26 22:24:30,230 - INFO -    Headers written to: files/output\SC10034-25-26- NK INFRA_07-04-25_Header.csv
+2025-04-26 22:24:30,231 - INFO -    Items written to: files/output\SC10034-25-26- NK INFRA_07-04-25_Items.csv
+2025-04-26 22:24:30,232 - INFO - 📦 Archived: files/input\SC10034-25-26- NK INFRA.pdf
+2025-04-26 22:24:30,233 - INFO - 🔔 New file detected: files/input\SC10046-25-26 - Leal seal.pdf
+2025-04-26 22:24:31,237 - INFO - 📄 Processing new file: SC10046-25-26 - Leal seal.pdf
+2025-04-26 22:24:31,252 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-26 22:24:31,254 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-26 22:24:31,422 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-26 22:24:31,422 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-26 22:24:31,425 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-26 22:24:31,426 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-26 22:24:31,730 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-26 22:24:31,731 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-26 22:24:31,733 - INFO - ✅ Extracted data from SC10046-25-26 - Leal seal.pdf
+2025-04-26 22:24:31,734 - INFO -    Headers written to: files/output\SC10046-25-26 - Leal seal_08-04-25_Header.csv
+2025-04-26 22:24:31,734 - INFO -    Items written to: files/output\SC10046-25-26 - Leal seal_08-04-25_Items.csv
+2025-04-26 22:24:31,735 - INFO - 📦 Archived: files/input\SC10046-25-26 - Leal seal.pdf
+2025-04-26 22:37:36,525 - INFO - 
+🛑 Stopping PDF invoice monitoring (Ctrl+C pressed)
+2025-04-26 22:37:36,526 - INFO - Observer stopped.
+2025-04-26 22:37:42,808 - INFO - 🚀 PDF Invoice Header Extractor with Watchdog
+2025-04-26 22:37:42,808 - INFO - 📁 Input Directory: files/input
+2025-04-26 22:37:42,809 - INFO - 📁 Output Directory: files/output
+2025-04-26 22:37:42,809 - INFO - 📁 Archive Directory: files/archive
+2025-04-26 22:37:42,809 - INFO - 📁 Error Directory: files/error
+2025-04-26 22:37:42,810 - INFO - 🔍 Checking for existing files...
+2025-04-26 22:37:42,810 - INFO - 📭 No existing PDF files found in input directory
+2025-04-26 22:37:42,811 - INFO - 
+👀 Watching for new PDF files in input directory...
+2025-04-26 22:37:42,811 - INFO - ⌨️  Press Ctrl+C to stop monitoring
+
+2025-04-26 22:38:07,872 - INFO - 🔔 New file detected: files/input\LAKHANI BHAVIN (1)_20250414_221448.pdf
+2025-04-26 22:38:08,882 - INFO - 📄 Processing new file: LAKHANI BHAVIN (1)_20250414_221448.pdf
+2025-04-26 22:38:09,420 - INFO - ✅ Extracted data from LAKHANI BHAVIN (1)_20250414_221448.pdf
+2025-04-26 22:38:09,421 - INFO -    Headers written to: files/output\LAKHANI BHAVIN (1)_20250414_221448_12-04-25_Header.csv
+2025-04-26 22:38:09,421 - INFO -    Items written to: files/output\LAKHANI BHAVIN (1)_20250414_221448_12-04-25_Items.csv
+2025-04-26 22:38:09,422 - INFO - 📦 Archived: files/input\LAKHANI BHAVIN (1)_20250414_221448.pdf
+2025-04-26 22:38:20,571 - INFO - 
+🛑 Stopping PDF invoice monitoring (Ctrl+C pressed)
+2025-04-26 22:38:20,572 - INFO - Observer stopped.
