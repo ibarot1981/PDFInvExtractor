@@ -76,3 +76,83 @@
 2025-04-26 22:38:20,571 - INFO - 
 🛑 Stopping PDF invoice monitoring (Ctrl+C pressed)
 2025-04-26 22:38:20,572 - INFO - Observer stopped.
+2025-04-28 12:35:42,365 - INFO - 🚀 PDF Invoice Header Extractor with Watchdog
+2025-04-28 12:35:42,365 - INFO - 📁 Input Directory: files/input
+2025-04-28 12:35:42,365 - INFO - 📁 Output Directory: files/output
+2025-04-28 12:35:42,365 - INFO - 📁 Archive Directory: files/archive
+2025-04-28 12:35:42,365 - INFO - 📁 Error Directory: files/error
+2025-04-28 12:35:42,365 - INFO - 🔍 Checking for existing files...
+2025-04-28 12:35:42,365 - INFO - 📭 No existing PDF files found in input directory
+2025-04-28 12:35:42,365 - INFO - 
+👀 Watching for new PDF files in input directory...
+2025-04-28 12:35:42,365 - INFO - ⌨️  Press Ctrl+C to stop monitoring
+
+2025-04-28 12:37:29,052 - INFO - 
+🛑 Stopping PDF invoice monitoring (Ctrl+C pressed)
+2025-04-28 12:37:29,052 - INFO - Observer stopped.
+2025-04-28 12:37:34,620 - INFO - 🚀 PDF Invoice Header Extractor with Watchdog
+2025-04-28 12:37:34,620 - INFO - 📁 Input Directory: files/input
+2025-04-28 12:37:34,620 - INFO - 📁 Output Directory: files/output
+2025-04-28 12:37:34,620 - INFO - 📁 Archive Directory: files/archive
+2025-04-28 12:37:34,620 - INFO - 📁 Error Directory: files/error
+2025-04-28 12:37:34,620 - INFO - 🔍 Checking for existing files...
+2025-04-28 12:37:34,632 - INFO - 📭 No existing PDF files found in input directory
+2025-04-28 12:37:34,634 - INFO - 
+👀 Watching for new PDF files in input directory...
+2025-04-28 12:37:34,634 - INFO - ⌨️  Press Ctrl+C to stop monitoring
+
+2025-04-28 12:37:45,796 - INFO - 
+🛑 Stopping PDF invoice monitoring (Ctrl+C pressed)
+2025-04-28 12:37:45,798 - INFO - Observer stopped.
+2025-04-28 12:37:53,309 - INFO - 🚀 PDF Invoice Header Extractor with Watchdog
+2025-04-28 12:37:53,309 - INFO - 📁 Input Directory: files/input
+2025-04-28 12:37:53,309 - INFO - 📁 Output Directory: files/output
+2025-04-28 12:37:53,309 - INFO - 📁 Archive Directory: files/archive
+2025-04-28 12:37:53,309 - INFO - 📁 Error Directory: files/error
+2025-04-28 12:37:53,309 - INFO - 🔍 Checking for existing files...
+2025-04-28 12:37:53,309 - INFO - 📭 No existing PDF files found in input directory
+2025-04-28 12:37:53,309 - INFO - 
+👀 Watching for new PDF files in input directory...
+2025-04-28 12:37:53,309 - INFO - ⌨️  Press Ctrl+C to stop monitoring
+
+2025-04-28 12:39:43,074 - INFO - 
+🛑 Stopping PDF invoice monitoring (Ctrl+C pressed)
+2025-04-28 12:39:43,075 - INFO - Observer stopped.
+2025-04-28 12:39:54,005 - INFO - 🚀 PDF Invoice Header Extractor with Watchdog
+2025-04-28 12:39:54,007 - INFO - 📁 Input Directory: files/input
+2025-04-28 12:39:54,007 - INFO - 📁 Output Directory: files/output
+2025-04-28 12:39:54,007 - INFO - 📁 Archive Directory: files/archive
+2025-04-28 12:39:54,007 - INFO - 📁 Error Directory: files/error
+2025-04-28 12:39:54,007 - INFO - 🔍 Checking for existing files...
+2025-04-28 12:39:54,007 - INFO - 📭 No existing PDF files found in input directory
+2025-04-28 12:39:54,007 - INFO - 
+👀 Watching for new PDF files in input directory...
+2025-04-28 12:39:54,007 - INFO - ⌨️  Press Ctrl+C to stop monitoring
+
+2025-04-28 12:40:40,223 - INFO - 
+🛑 Stopping PDF invoice monitoring (Ctrl+C pressed)
+2025-04-28 12:42:15,759 - INFO - 🚀 PDF Invoice Header Extractor with Watchdog
+2025-04-28 12:42:15,759 - INFO - 📁 Input Directory: files/input
+2025-04-28 12:42:15,759 - INFO - 📁 Output Directory: files/output
+2025-04-28 12:42:15,759 - INFO - 📁 Archive Directory: files/archive
+2025-04-28 12:42:15,759 - INFO - 📁 Error Directory: files/error
+2025-04-28 12:42:15,759 - INFO - 🔍 Checking for existing files...
+2025-04-28 12:42:15,759 - INFO - 📭 No existing PDF files found in input directory
+2025-04-28 12:42:15,759 - INFO - 
+👀 Watching for new PDF files in input directory...
+2025-04-28 12:42:15,759 - INFO - ⌨️  Press Ctrl+C to stop monitoring
+
+2025-04-28 12:43:15,766 - INFO - 
+🛑 Stopping PDF invoice monitoring (Ctrl+C pressed)
+2025-04-28 12:43:15,768 - INFO - Observer stopped.
+2025-04-28 12:43:19,687 - INFO - 🚀 PDF Invoice Header Extractor with Watchdog
+2025-04-28 12:43:19,687 - INFO - 📁 Input Directory: files/input
+2025-04-28 12:43:19,702 - INFO - 📁 Output Directory: files/output
+2025-04-28 12:43:19,702 - INFO - 📁 Archive Directory: files/archive
+2025-04-28 12:43:19,702 - INFO - 📁 Error Directory: files/error
+2025-04-28 12:43:19,702 - INFO - 🔍 Checking for existing files...
+2025-04-28 12:43:19,702 - INFO - 📭 No existing PDF files found in input directory
+2025-04-28 12:43:19,702 - INFO - 
+👀 Watching for new PDF files in input directory...
+2025-04-28 12:43:19,702 - INFO - ⌨️  Press Ctrl+C to stop monitoring
+

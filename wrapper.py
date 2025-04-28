@@ -30,12 +30,14 @@ LOG_BACKUP_COUNT = int(os.getenv('WRAPPER_LOG_BACKUP_COUNT', 3))  # Default 3 fi
 file_handler = RotatingFileHandler(
     LOG_FILE,
     maxBytes=LOG_MAX_BYTES,
-    backupCount=LOG_BACKUP_COUNT
+    backupCount=LOG_BACKUP_COUNT,
+    encoding='utf-8'  # Explicitly set encoding
 )
 file_handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
 
 console_handler = logging.StreamHandler(sys.stdout)
 console_handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
+console_handler.encoding = 'utf-8' # Explicitly set encoding for console handler
 
 logging.basicConfig(
     level=logging.INFO,
