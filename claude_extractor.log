@@ -156,3 +156,137 @@
 👀 Watching for new PDF files in input directory...
 2025-04-28 12:43:19,702 - INFO - ⌨️  Press Ctrl+C to stop monitoring
 
+2025-04-28 12:56:01,902 - INFO - 
+🛑 Stopping PDF invoice monitoring (Ctrl+C pressed)
+2025-04-28 12:56:34,570 - INFO - 🚀 PDF Invoice Header Extractor with Watchdog
+2025-04-28 12:56:34,570 - INFO - 📁 Input Directory: files/input
+2025-04-28 12:56:34,570 - INFO - 📁 Output Directory: files/output
+2025-04-28 12:56:34,570 - INFO - 📁 Archive Directory: files/archive
+2025-04-28 12:56:34,570 - INFO - 📁 Error Directory: files/error
+2025-04-28 12:56:34,575 - INFO - 🔍 Checking for existing files...
+2025-04-28 12:56:34,575 - INFO - 📭 No existing PDF files found in input directory
+2025-04-28 12:56:34,575 - INFO - 
+👀 Watching for new PDF files in input directory...
+2025-04-28 12:56:34,575 - INFO - ⌨️  Press Ctrl+C to stop monitoring
+
+2025-04-28 12:56:55,613 - INFO - 🔔 New file detected: files/input\LAKHANI BHAVIN (1).pdf
+2025-04-28 12:56:57,221 - INFO - ✅ Extracted data from LAKHANI BHAVIN (1).pdf
+2025-04-28 12:56:57,222 - INFO -    Headers written to: files/output\LAKHANI BHAVIN (1)_12-04-25_Header.csv
+2025-04-28 12:56:57,222 - INFO -    Items written to: files/output\LAKHANI BHAVIN (1)_12-04-25_Items.csv
+2025-04-28 12:56:57,225 - INFO - 📦 Archived: LAKHANI BHAVIN (1).pdf
+2025-04-28 12:56:57,225 - INFO - 🔔 New file detected: files/input\SC10034-25-26- NK INFRA.pdf
+2025-04-28 12:56:57,739 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:56:57,975 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:56:57,979 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:56:58,178 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:56:58,179 - INFO - ✅ Extracted data from SC10034-25-26- NK INFRA.pdf
+2025-04-28 12:56:58,180 - INFO -    Headers written to: files/output\SC10034-25-26- NK INFRA_07-04-25_Header.csv
+2025-04-28 12:56:58,181 - INFO -    Items written to: files/output\SC10034-25-26- NK INFRA_07-04-25_Items.csv
+2025-04-28 12:56:58,181 - INFO - 📦 Archived: SC10034-25-26- NK INFRA.pdf
+2025-04-28 12:56:58,183 - INFO - 🔔 New file detected: files/input\SC10046-25-26 - Leal seal.pdf
+2025-04-28 12:56:58,689 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:56:58,705 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:56:58,927 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:56:58,927 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:56:58,944 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:56:58,944 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:56:59,391 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:56:59,391 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:56:59,391 - INFO - ✅ Extracted data from SC10046-25-26 - Leal seal.pdf
+2025-04-28 12:56:59,391 - INFO -    Headers written to: files/output\SC10046-25-26 - Leal seal_08-04-25_Header.csv
+2025-04-28 12:56:59,391 - INFO -    Items written to: files/output\SC10046-25-26 - Leal seal_08-04-25_Items.csv
+2025-04-28 12:56:59,391 - INFO - 📦 Archived: SC10046-25-26 - Leal seal.pdf
+2025-04-28 12:56:59,391 - INFO - 🔔 New file detected: files/input\SC10140-25-26 - Rachana Construction.pdf
+2025-04-28 12:56:59,936 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:57:00,148 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:57:00,148 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:57:00,324 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:57:00,324 - INFO - ✅ Extracted data from SC10140-25-26 - Rachana Construction.pdf
+2025-04-28 12:57:00,324 - INFO -    Headers written to: files/output\SC10140-25-26 - Rachana Construction_23-04-25_Header.csv
+2025-04-28 12:57:00,324 - INFO -    Items written to: files/output\SC10140-25-26 - Rachana Construction_23-04-25_Items.csv
+2025-04-28 12:57:00,324 - INFO - 📦 Archived: SC10140-25-26 - Rachana Construction.pdf
+2025-04-28 12:57:00,324 - INFO - 🔔 New file detected: files/input\SC11427-24-25 -E-smart concrete Equipment and spares.pdf
+2025-04-28 12:57:00,869 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:57:00,869 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:57:00,869 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:57:00,869 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:57:00,869 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:57:00,997 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:57:00,997 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:57:00,997 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:57:00,997 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:57:00,997 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:57:00,997 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:57:00,997 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:57:00,997 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:57:01,012 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:57:01,012 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:57:01,525 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:57:01,525 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:57:01,525 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:57:01,525 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:57:01,525 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:57:01,525 - INFO - ✅ Extracted data from SC11427-24-25 -E-smart concrete Equipment and spares.pdf
+2025-04-28 12:57:01,525 - INFO -    Headers written to: files/output\SC11427-24-25 -E-smart concrete Equipment and spares_31-01-25_Header.csv
+2025-04-28 12:57:01,525 - INFO -    Items written to: files/output\SC11427-24-25 -E-smart concrete Equipment and spares_31-01-25_Items.csv
+2025-04-28 12:57:01,525 - INFO - 📦 Archived: SC11427-24-25 -E-smart concrete Equipment and spares.pdf
+2025-04-28 12:57:01,525 - INFO - 🔔 New file detected: files/input\SC11519-24-25 -Esmart Concrete eqp.& spares.pdf
+2025-04-28 12:57:02,062 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:57:02,062 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:57:02,062 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:57:02,062 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:57:02,062 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:57:02,062 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:57:02,220 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:57:02,220 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:57:02,220 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:57:02,220 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:57:02,220 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:57:02,220 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:57:02,220 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:57:02,220 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:57:02,237 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:57:02,238 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:57:02,239 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:57:02,241 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:57:02,985 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:57:02,985 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:57:02,985 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:57:02,985 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:57:02,985 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:57:02,985 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:57:02,985 - INFO - ✅ Extracted data from SC11519-24-25 -Esmart Concrete eqp.& spares.pdf
+2025-04-28 12:57:02,991 - INFO -    Headers written to: files/output\SC11519-24-25 -Esmart Concrete eqp.& spares_17-02-25_Header.csv
+2025-04-28 12:57:02,991 - INFO -    Items written to: files/output\SC11519-24-25 -Esmart Concrete eqp.& spares_17-02-25_Items.csv
+2025-04-28 12:57:02,991 - INFO - 📦 Archived: SC11519-24-25 -Esmart Concrete eqp.& spares.pdf
+2025-04-28 12:57:02,991 - INFO - 🔔 New file detected: files/input\SC11657-24-25 E msart concrete.pdf
+2025-04-28 12:57:04,466 - WARNING - Invalid invoice date: '' in file 'files/input\SC11657-24-25 E msart concrete.pdf'. Cannot generate MonthYear.
+2025-04-28 12:57:05,435 - INFO - ✅ Extracted data from SC11657-24-25 E msart concrete.pdf
+2025-04-28 12:57:05,435 - INFO -    Headers written to: files/output\SC11657-24-25 E msart concrete_28-04-25_Header.csv
+2025-04-28 12:57:05,435 - INFO -    Items written to: files/output\SC11657-24-25 E msart concrete_28-04-25_Items.csv
+2025-04-28 12:57:05,435 - INFO - 📦 Archived: SC11657-24-25 E msart concrete.pdf
+2025-04-28 12:57:05,435 - INFO - 🔔 New file detected: files/input\SC11719-24-25 - E Smart concrete.pdf
+2025-04-28 12:57:05,942 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:57:05,959 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:57:05,960 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:57:05,962 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:57:05,963 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:57:06,105 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:57:06,105 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:57:06,107 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:57:06,107 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:57:06,107 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:57:06,111 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:57:06,111 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:57:06,111 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:57:06,111 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:57:06,111 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:57:06,771 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:57:06,771 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:57:06,771 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:57:06,771 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:57:06,771 - WARNING - CropBox missing from /Page, defaulting to MediaBox
+2025-04-28 12:57:06,771 - INFO - ✅ Extracted data from SC11719-24-25 - E Smart concrete.pdf
+2025-04-28 12:57:06,771 - INFO -    Headers written to: files/output\SC11719-24-25 - E Smart concrete_29-03-25_Header.csv
+2025-04-28 12:57:06,771 - INFO -    Items written to: files/output\SC11719-24-25 - E Smart concrete_29-03-25_Items.csv
+2025-04-28 12:57:06,771 - INFO - 📦 Archived: SC11719-24-25 - E Smart concrete.pdf

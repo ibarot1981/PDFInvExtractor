@@ -772,15 +772,76 @@ def move_file(file_path, target_dir):
     new_name = f"{name}_{timestamp}{ext}"
     shutil.move(file_path, os.path.join(target_dir, new_name))
 
+# === FILE STABILITY CHECK ===
+def is_file_stable(file_path, retries=3, delay=0.5):
+    """Checks if a file size is stable over a short period."""
+    last_size = -1
+    for _ in range(retries):
+        try:
+            current_size = os.path.getsize(file_path)
+            if current_size == last_size and current_size > 0:
+                return True  # Size is stable and non-zero
+            last_size = current_size
+            time.sleep(delay)
+        except FileNotFoundError:
+            logging.warning(f"File not found during stability check: {file_path}")
+            return False # File disappeared
+        except Exception as e:
+            logging.error(f"Error checking file stability for {file_path}: {e}")
+            return False # Other error during check
+    logging.warning(f"File size for {file_path} did not stabilize after {retries} retries.")
+    return False
+
 # === HANDLE FILE ===
 def handle_file(file_path):
-    success = process_pdf(file_path)
-    if success:
-        move_file(file_path, ARCHIVE_DIR)
-        logging.info(f"📦 Archived: {file_path}")
-    else:
-        move_file(file_path, ERROR_DIR)
-        logging.warning(f"⚠️ Moved to error folder: {file_path}")
+    """Processes a single PDF file after checking stability."""
+    if not os.path.exists(file_path):
+        logging.warning(f"File disappeared before handling: {file_path}")
+        return
+
+    if not is_file_stable(file_path):
+        logging.warning(f"Skipping unstable or empty file: {file_path}")
+        # Optionally move unstable files to error dir immediately
+        # try:
+        #     move_file(file_path, ERROR_DIR)
+        #     logging.warning(f"Moved unstable file to error folder: {file_path}")
+        # except Exception as move_err:
+        #     logging.error(f"Could not move unstable file {file_path} to error folder: {move_err}")
+        return
+
+    try:
+        success = process_pdf(file_path)
+        if success:
+            try:
+                move_file(file_path, ARCHIVE_DIR)
+                logging.info(f"📦 Archived: {os.path.basename(file_path)}") # Log only basename
+            except Exception as move_err:
+                logging.error(f"Error moving processed file {file_path} to archive: {move_err}")
+                # Attempt to move to error dir as fallback
+                try:
+                    move_file(file_path, ERROR_DIR)
+                    logging.warning(f"Moved processed file to error folder due to archive error: {os.path.basename(file_path)}")
+                except Exception as fallback_move_err:
+                     logging.error(f"Could not move file {file_path} to error folder after archive failure: {fallback_move_err}")
+        else:
+            # process_pdf returned False (error during extraction)
+            try:
+                move_file(file_path, ERROR_DIR)
+                logging.warning(f"⚠️ Moved to error folder (processing error): {os.path.basename(file_path)}") # Log only basename
+            except Exception as move_err:
+                 logging.error(f"Could not move file {file_path} to error folder after processing error: {move_err}")
+
+    except Exception as handle_err:
+        logging.error(f"Unhandled error during handle_file for {file_path}: {handle_err}")
+        logging.exception("Traceback for handle_file error:")
+        # Attempt to move to error dir if any unexpected error occurs
+        try:
+            if os.path.exists(file_path): # Check again if it still exists
+                 move_file(file_path, ERROR_DIR)
+                 logging.warning(f"Moved file to error folder due to unhandled error: {os.path.basename(file_path)}")
+        except Exception as final_move_err:
+             logging.error(f"Could not move file {file_path} to error folder after unhandled error: {final_move_err}")
+
 
 # === PROCESS EXISTING FILES ===
 def process_existing_files():
@@ -810,16 +871,8 @@ class PDFHandler(FileSystemEventHandler):
         if not event.is_directory and event.src_path.lower().endswith('.pdf'):
             logging.info(f"🔔 New file detected: {event.src_path}")
             
-            # Wait a moment to ensure the file is completely written
-            # Some applications may write files in chunks
-            time.sleep(1)
-            
-            # Check if file still exists (it might have been moved by another process)
-            if os.path.exists(event.src_path):
-                logging.info(f"📄 Processing new file: {os.path.basename(event.src_path)}")
-                handle_file(event.src_path)
-            else:
-                logging.warning(f"⚠️ File no longer exists before processing could start: {event.src_path}")
+            # The stability check is now inside handle_file
+            handle_file(event.src_path)
 
 # === SIGNAL HANDLER FOR GRACEFUL EXIT ===
 def signal_handler(sig, frame):
