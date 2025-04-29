@@ -5,6 +5,7 @@ import os
 import traceback
 import shutil
 import logging
+import time # Added for potential retries or delays
 from datetime import datetime
 from dotenv import load_dotenv
 
@@ -142,7 +143,150 @@ def read_csv_to_records(csv_file_path, column_mapping):
         raise # Re-raise
     return records
 
-# --- New/Modified Functions ---
+
+# --- Invoice Log Functions ---
+
+PROCESSED_INVOICES_LOG_FILENAME = "processed_invoices.log"
+INVOICE_NUMBER_COLUMN_LABEL = "Invoice Number" # Assumed label in Grist and CSV Header
+
+def get_grist_column_id_by_label(columns_data, label):
+    """Finds the Grist column ID for a given label."""
+    if "columns" in columns_data and isinstance(columns_data["columns"], list):
+        for col in columns_data["columns"]:
+            if "fields" in col and col["fields"].get("label") == label and "id" in col:
+                return col["id"]
+    return None
+
+def fetch_and_populate_log(log_path, uploader: GristUploader, header_table_id, invoice_col_label):
+    """Fetches existing invoice numbers from Grist and populates the log file."""
+    print(f"Log file '{log_path}' not found. Fetching existing invoice numbers from Grist table '{header_table_id}'...")
+    processed_invoices = set()
+    try:
+        # 1. Get column ID for Invoice Number
+        header_columns = uploader.get_table_columns(header_table_id)
+        invoice_col_id = get_grist_column_id_by_label(header_columns, invoice_col_label)
+        if not invoice_col_id:
+            logging.error(f"Could not find column with label '{invoice_col_label}' in Grist table '{header_table_id}'. Cannot create initial log.")
+            # Decide behaviour: raise error or return empty set? Let's return empty for now.
+            print(f"Error: Column '{invoice_col_label}' not found in Grist. Initial log file will be empty.")
+            # Create an empty file to prevent re-fetching attempts
+            with open(log_path, 'w', encoding='utf-8') as f:
+                pass # Create empty file
+            return processed_invoices # Return empty set
+
+        # 2. Get all records from the header table
+        print(f"Fetching all records from Grist table '{header_table_id}' to get invoice numbers...")
+        # Note: This might be slow for very large tables. Grist API might have pagination.
+        # For simplicity, assuming get_table_data fetches all for now.
+        # TODO: Implement pagination if needed for very large tables.
+        all_records_data = uploader.get_table_data(header_table_id)
+        records = all_records_data.get("records", [])
+        print(f"Found {len(records)} records in Grist table '{header_table_id}'.")
+
+        # 3. Extract invoice numbers
+        for record in records:
+            fields = record.get("fields", {})
+            invoice_num = fields.get(invoice_col_id)
+            if invoice_num: # Check if not None or empty string
+                processed_invoices.add(str(invoice_num).strip()) # Ensure string and strip whitespace
+
+        # 4. Write to log file
+        print(f"Writing {len(processed_invoices)} unique invoice numbers to '{log_path}'...")
+        with open(log_path, 'w', encoding='utf-8') as f:
+            for inv_num in sorted(list(processed_invoices)): # Sort for readability
+                f.write(inv_num + '\n')
+        print("Log file created successfully.")
+
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Network error fetching data from Grist for initial log: {e}")
+        print(f"Error: Network error connecting to Grist. Could not create initial log file '{log_path}'.")
+        # Don't create the file, so it tries again next time.
+        # Return empty set, processing will likely fail later anyway.
+        return set()
+    except Exception as e:
+        logging.error(f"Error fetching or writing initial invoice log '{log_path}': {e}\n{traceback.format_exc()}")
+        print(f"Error: Failed to create initial log file '{log_path}'. See error log.")
+        # Don't create the file. Return empty set.
+        return set()
+
+    return processed_invoices
+
+def load_or_create_invoice_log(log_path, uploader, header_table_id, invoice_col_label):
+    """Loads processed invoices from the log file, or creates it by fetching from Grist if it doesn't exist."""
+    processed_invoices = set()
+    if os.path.exists(log_path):
+        print(f"Loading processed invoices from '{log_path}'...")
+        try:
+            with open(log_path, 'r', encoding='utf-8') as f:
+                for line in f:
+                    invoice_num = line.strip()
+                    if invoice_num: # Avoid adding empty lines
+                        processed_invoices.add(invoice_num)
+            print(f"Loaded {len(processed_invoices)} processed invoice numbers.")
+        except Exception as e:
+            logging.error(f"Error reading invoice log file '{log_path}': {e}. Treating as empty.")
+            print(f"Warning: Could not read existing log file '{log_path}'. Assuming no invoices processed yet.")
+            # Proceed as if the file didn't exist, but log the error.
+            # Optionally, could try to fetch from Grist again here, but might overwrite a corrupted log.
+            # Let's return empty for safety.
+            return set()
+    else:
+        # File doesn't exist, fetch from Grist and create it
+        processed_invoices = fetch_and_populate_log(log_path, uploader, header_table_id, invoice_col_label)
+
+    return processed_invoices
+
+def append_invoice_to_log(log_path, invoice_number):
+    """Appends a successfully processed invoice number to the log file."""
+    try:
+        with open(log_path, 'a', encoding='utf-8') as f:
+            f.write(str(invoice_number).strip() + '\n')
+    except Exception as e:
+        logging.error(f"Failed to append invoice number '{invoice_number}' to log file '{log_path}': {e}")
+        # This is problematic, as the invoice is processed but not logged. Manual check might be needed.
+        print(f"CRITICAL WARNING: Failed to log processed invoice '{invoice_number}' to '{log_path}'. Duplicate check may fail next time.")
+
+
+def get_invoice_number_from_csv(csv_path, invoice_col_label):
+    """Reads the first data row of a CSV and returns the value from the 'Invoice Number' column."""
+    try:
+        with open(csv_path, 'r', newline='', encoding='utf-8') as csvfile:
+            reader = csv.reader(csvfile)
+            headers = next(reader, None) # Read header row
+            if not headers:
+                # print(f"Warning: CSV file has no headers: {csv_path}")
+                return None # Or raise error? Let's return None.
+
+            try:
+                invoice_col_index = headers.index(invoice_col_label)
+            except ValueError:
+                # print(f"Warning: Column '{invoice_col_label}' not found in CSV headers: {csv_path}")
+                logging.warning(f"Column '{invoice_col_label}' not found in CSV headers: {os.path.basename(csv_path)}")
+                return None # Column doesn't exist
+
+            first_data_row = next(reader, None) # Read first data row
+            if not first_data_row:
+                # print(f"Warning: CSV file has headers but no data rows: {csv_path}")
+                return None # No data to get invoice number from
+
+            if invoice_col_index < len(first_data_row):
+                invoice_num = first_data_row[invoice_col_index].strip()
+                return invoice_num if invoice_num else None # Return None if empty string
+            else:
+                # print(f"Warning: Data row is shorter than expected (missing invoice column data?): {csv_path}")
+                logging.warning(f"Data row shorter than expected in {os.path.basename(csv_path)}. Cannot get invoice number.")
+                return None
+
+    except FileNotFoundError:
+        # This shouldn't happen if called within the main loop's check, but handle defensively.
+        logging.error(f"File not found when trying to read invoice number: {csv_path}")
+        return None
+    except Exception as e:
+        logging.error(f"Error reading invoice number from {os.path.basename(csv_path)}: {e}")
+        return None
+
+
+# --- Processing Functions ---
 
 def setup_logging(log_file):
     """Sets up logging to file."""
@@ -248,6 +392,29 @@ def move_and_rename_file(source_path, success_dir):
         logging.error(f"Failed to move/rename {base_filename} to {dest_path}. Error: {e}\n{traceback.format_exc()}")
         return False
 
+def move_and_rename_duplicate(source_path, rejected_dir):
+    """Moves a file to the rejected directory and renames it with a _duplicate suffix."""
+    if not os.path.exists(source_path):
+        print(f"Warning: Source file not found for moving to rejected: {source_path}")
+        return False # Indicate failure
+
+    base_filename = os.path.basename(source_path)
+    name_part, ext = os.path.splitext(base_filename)
+    # Ensure we handle potential double extensions like .tar.gz if needed, but .csv is simple
+    dest_filename = f"{name_part}_duplicate{ext}"
+    dest_path = os.path.join(rejected_dir, dest_filename)
+
+    try:
+        # Ensure rejected directory exists
+        os.makedirs(rejected_dir, exist_ok=True)
+        shutil.move(source_path, dest_path)
+        print(f"Moved duplicate file {base_filename} to {dest_filename} in {rejected_dir}")
+        return True
+    except Exception as e:
+        logging.error(f"Failed to move/rename duplicate file {base_filename} to {dest_path}. Error: {e}\n{traceback.format_exc()}")
+        print(f"Error: Failed to move duplicate file {base_filename} to rejected folder.")
+        return False
+
 
 def main():
     # --- Configuration ---
@@ -259,6 +426,7 @@ def main():
     items_table_id = os.getenv('GRIST_ITEMS_TABLE_ID')
     csv_directory_path = os.getenv('CSV_DIRECTORY_PATH')
     success_folder_name = os.getenv('SUCCESS_FOLDER_NAME', 'Success')
+    rejected_folder_name = os.getenv('REJECTED_FOLDER_NAME', 'Rejected') # New config
 
     # --- Validate Configuration ---
     if not all([doc_id, header_table_id, items_table_id, csv_directory_path]):
@@ -276,11 +444,24 @@ def main():
          logging.error(f"Could not create success directory '{success_dir_path}'. Error: {e}. Exiting.")
          return
 
+    rejected_dir_path = os.path.join(csv_directory_path, rejected_folder_name)
+    try:
+        os.makedirs(rejected_dir_path, exist_ok=True) # Ensure rejected folder exists too
+    except OSError as e:
+         # Log error but maybe don't exit? Depends on desired behaviour if rejected folder fails.
+         # Let's log and continue, duplicate handling will fail later if dir doesn't exist.
+         logging.error(f"Could not create rejected directory '{rejected_dir_path}'. Error: {e}. Duplicate files might not be moved.")
+
+
     print(f"Processing CSV files from directory: {csv_directory_path}")
     print(f"Header Table ID: {header_table_id}")
     print(f"Items Table ID: {items_table_id}")
     print(f"Success Folder: {success_dir_path}")
+    print(f"Rejected Folder: {rejected_dir_path}") # Print new folder path
     print(f"Log File: {log_file_name}")
+    processed_log_path = os.path.join(csv_directory_path, PROCESSED_INVOICES_LOG_FILENAME)
+    print(f"Processed Invoice Log: {processed_log_path}")
+
 
     # --- Initialize Grist Uploader ---
     try:
@@ -301,6 +482,18 @@ def main():
     except Exception as e:
         logging.error(f"Failed to get Grist column information. Check API key, Doc ID, Table IDs, and network connection. Error: {e}\n{traceback.format_exc()}. Exiting.")
         return
+
+    # --- Load or Create Processed Invoice Log ---
+    try:
+        processed_invoice_numbers = load_or_create_invoice_log(
+            processed_log_path, uploader, header_table_id, INVOICE_NUMBER_COLUMN_LABEL
+        )
+    except Exception as e:
+        # Errors during log loading/creation are logged within the functions
+        logging.critical(f"Failed to load or create the processed invoice log '{processed_log_path}'. Cannot proceed safely with duplicate checks. Exiting. Error: {e}")
+        print(f"CRITICAL: Failed to initialize invoice log. Exiting.")
+        return
+
 
     # --- Find and Pair Files ---
     files_in_dir = os.listdir(csv_directory_path)
@@ -323,6 +516,7 @@ def main():
     processed_count = 0
     success_count = 0
     fail_count = 0
+    duplicate_count = 0 # Add counter for duplicates
 
     for prefix in sorted(list(file_prefixes)): # Sort for consistent processing order
         header_filename = f"{prefix}_Header.csv"
@@ -337,15 +531,46 @@ def main():
             processed_count += 1
             header_success = False
             items_success = False
+            invoice_number = None # Initialize
+
+            # 0. Check for Duplicates using the log file
+            try:
+                invoice_number = get_invoice_number_from_csv(header_path, INVOICE_NUMBER_COLUMN_LABEL)
+                if invoice_number is None:
+                    print(f"Warning: Could not read Invoice Number from {header_filename}. Skipping this pair.")
+                    logging.warning(f"Could not read Invoice Number from {header_filename} for prefix '{prefix}'. Skipping.")
+                    fail_count += 1
+                    continue # Skip to next prefix
+
+                if invoice_number in processed_invoice_numbers:
+                    print(f"Duplicate detected: Invoice Number '{invoice_number}' from file {header_filename} already processed. Moving to Rejected folder.")
+                    duplicate_count += 1
+                    # Move both files to Rejected folder with _duplicate suffix
+                    moved_header_dup = move_and_rename_duplicate(header_path, rejected_dir_path)
+                    moved_items_dup = move_and_rename_duplicate(items_path, rejected_dir_path)
+                    if not moved_header_dup or not moved_items_dup:
+                         # Log that the move failed, files might remain in source
+                         logging.error(f"Failed to move one or both duplicate files for prefix '{prefix}' (Invoice: {invoice_number}) to Rejected folder.")
+                    # No need to increment fail_count here unless move fails? Let's count separately.
+                    continue # Skip to next prefix
+
+            except Exception as e:
+                 print(f"Error checking for duplicate invoice number in {header_filename}: {e}. Skipping this pair.")
+                 logging.error(f"Error checking duplicate for prefix '{prefix}' ({header_filename}): {e}\n{traceback.format_exc()}")
+                 fail_count += 1
+                 continue # Skip to next prefix
+
+
+            # --- If not a duplicate, proceed with upload ---
+            print(f"Invoice Number '{invoice_number}' not found in log. Proceeding with upload...")
 
             # 1. Process Header File
             try:
                 header_success = upload_csv_to_grist(header_path, header_table_id, uploader, header_columns_data)
             except Exception as e:
-                # Catch unexpected errors during header processing (already logged in upload_csv_to_grist if it's an upload error)
-                if not isinstance(e, (requests.exceptions.RequestException, FileNotFoundError)): # Avoid double logging known errors
+                if not isinstance(e, (requests.exceptions.RequestException, FileNotFoundError)):
                      logging.error(f"Unexpected error processing header file {header_filename}: {e}\n{traceback.format_exc()}")
-                header_success = False # Ensure it's marked as failed
+                header_success = False
 
             # 2. Process Items File (only if header was successful)
             if header_success:
@@ -357,25 +582,30 @@ def main():
                     items_success = False
             else:
                  print(f"Skipping items file {items_filename} because header processing failed.")
-                 items_success = False # Mark items as failed if header failed
+                 items_success = False
 
-            # 3. Move files if BOTH succeeded
+            # 3. Move files and Update Log if BOTH succeeded
             if header_success and items_success:
                 print(f"Both uploads successful for prefix '{prefix}'. Moving files...")
                 moved_header = move_and_rename_file(header_path, success_dir_path)
                 moved_items = move_and_rename_file(items_path, success_dir_path)
                 if moved_header and moved_items:
                     success_count += 1
-                    print(f"Successfully processed and moved pair: {prefix}")
+                    # Add to log file and in-memory set
+                    append_invoice_to_log(processed_log_path, invoice_number)
+                    processed_invoice_numbers.add(invoice_number) # Update in-memory set
+                    print(f"Successfully processed, moved, and logged pair: {prefix} (Invoice: {invoice_number})")
                 else:
                     fail_count += 1
-                    logging.error(f"Uploads succeeded for '{prefix}', but failed to move one or both files. Please check manually.")
+                    # CRITICAL: Uploads succeeded but move failed. Invoice is NOT logged.
+                    logging.error(f"Uploads succeeded for '{prefix}' (Invoice: {invoice_number}), but failed to move one or both files. INVOICE NOT LOGGED AS PROCESSED. Please check manually.")
+                    print(f"CRITICAL WARNING: Uploads succeeded for '{prefix}' but move failed. Invoice '{invoice_number}' was NOT logged. Manual check required.")
             else:
                 fail_count += 1
-                print(f"Processing failed for pair '{prefix}'. Files will not be moved. Check log '{log_file_name}' for details.")
+                print(f"Processing failed for pair '{prefix}'. Files will not be moved. Invoice '{invoice_number}' not logged. Check '{log_file_name}' for details.")
 
         elif header_path and not items_path:
-             # Only header exists, maybe log this? Or ignore if it's expected.
+             # Only header exists
              # print(f"Found header file '{header_filename}' but no matching items file.")
              pass
         elif not header_path and items_path:
@@ -390,7 +620,8 @@ def main():
     print(f"Total unique prefixes found: {len(file_prefixes)}")
     print(f"Pairs attempted processing (both files existed): {processed_count}")
     print(f"Pairs successfully processed and moved: {success_count}")
-    print(f"Pairs failed (upload or move error): {fail_count}")
+    print(f"Pairs detected as duplicates and moved to Rejected: {duplicate_count}")
+    print(f"Pairs failed (upload, move, or other error): {fail_count}")
     print(f"Check '{log_file_name}' for any error details.")
     print("Processing complete.")
 
