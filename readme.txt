@@ -22,6 +22,8 @@
 
 > Edit InvoiceLoader.bat and modify the directory path where the project files are kept
 
+> Edit .env file for output file directory to check for fetching .cssv files for upload into grist
+
 > close all command windows and open a new one and navigate to PDFInvExtractor folder
 
 > Run InvoiceLoader.bat.
