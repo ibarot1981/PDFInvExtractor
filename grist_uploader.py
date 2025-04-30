@@ -371,25 +371,41 @@ def upload_csv_to_grist(csv_file_path, table_id, uploader, grist_columns_data):
     return True # Indicate success for this file
 
 
-def move_and_rename_file(source_path, success_dir):
-    """Moves a file to the success directory and renames its extension."""
+def move_and_rename_file(source_path, base_success_dir):
+    """
+    Moves a file to a Month-Year subdirectory within the base success directory
+    and renames its extension to .success.
+    """
     if not os.path.exists(source_path):
         print(f"Warning: Source file not found for moving: {source_path}")
         return False # Indicate failure
 
-    base_filename = os.path.basename(source_path)
-    name_part, _ = os.path.splitext(base_filename)
-    dest_filename = f"{name_part}.success"
-    dest_path = os.path.join(success_dir, dest_filename)
-
     try:
-        # Ensure success directory exists
-        os.makedirs(success_dir, exist_ok=True)
+        # 1. Determine Month-Year subdirectory
+        now = datetime.now()
+        month_year_str = now.strftime("%b-%y") # e.g., Apr-25
+        month_year_dir = os.path.join(base_success_dir, month_year_str)
+
+        # 2. Ensure Month-Year subdirectory exists
+        os.makedirs(month_year_dir, exist_ok=True)
+
+        # 3. Define destination filename and path
+        base_filename = os.path.basename(source_path)
+        name_part, _ = os.path.splitext(base_filename)
+        dest_filename = f"{name_part}.success"
+        dest_path = os.path.join(month_year_dir, dest_filename) # Path inside Month-Year dir
+
+        # 4. Move the file
         shutil.move(source_path, dest_path)
-        print(f"Successfully moved and renamed {base_filename} to {dest_filename} in {success_dir}")
+        print(f"Successfully moved and renamed {base_filename} to {dest_filename} in {month_year_dir}")
         return True
     except Exception as e:
-        logging.error(f"Failed to move/rename {base_filename} to {dest_path}. Error: {e}\n{traceback.format_exc()}")
+        # Log error with the intended destination path for clarity
+        # Construct intended path again for logging, in case error happened before dest_path was set
+        intended_dest_dir = os.path.join(base_success_dir, datetime.now().strftime("%b-%y"))
+        intended_dest_filename = f"{os.path.splitext(os.path.basename(source_path))[0]}.success"
+        intended_dest_path = os.path.join(intended_dest_dir, intended_dest_filename)
+        logging.error(f"Failed to move/rename {os.path.basename(source_path)} to {intended_dest_path}. Error: {e}\n{traceback.format_exc()}")
         return False
 
 def move_and_rename_duplicate(source_path, rejected_dir):

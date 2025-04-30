@@ -10,6 +10,7 @@ from logging.handlers import RotatingFileHandler
 from datetime import datetime
 import pdfplumber
 import shutil
+import zipfile # Added for zipping
 from dotenv import load_dotenv
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
@@ -756,21 +757,69 @@ def process_pdf(file_path):
         logging.info(f"✅ Extracted data from {os.path.basename(file_path)}")
         logging.info(f"   Headers written to: {headers_csv}")
         logging.info(f"   Items written to: {items_csv}")
-        return True
+        # Return success status and the extracted month_year
+        return True, month_year 
     
     except Exception as e:
         logging.error(f"❌ Error processing {file_path}: {e}")
         logging.exception("Traceback:") # Log the full traceback
-        return False
+        # Return failure status and None for month_year
+        return False, None
 
-# === FILE MOVING WITH TIMESTAMP ===
-def move_file(file_path, target_dir):
-    os.makedirs(target_dir, exist_ok=True)
-    base_name = os.path.basename(file_path)
-    name, ext = os.path.splitext(base_name)
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    new_name = f"{name}_{timestamp}{ext}"
-    shutil.move(file_path, os.path.join(target_dir, new_name))
+# === FILE MOVING (ERROR) WITH TIMESTAMP ===
+# Renamed from move_file to be specific for error handling
+def move_to_error(file_path, target_dir):
+    """Moves a file to the specified target directory, adding a timestamp."""
+    try:
+        os.makedirs(target_dir, exist_ok=True)
+        base_name = os.path.basename(file_path)
+        name, ext = os.path.splitext(base_name)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        new_name = f"{name}_{timestamp}{ext}"
+        target_path = os.path.join(target_dir, new_name)
+        shutil.move(file_path, target_path)
+        logging.info(f"Moved '{base_name}' to '{target_path}'")
+    except Exception as e:
+        logging.error(f"Failed to move '{os.path.basename(file_path)}' to '{target_dir}': {e}")
+        # Re-raise the exception so the caller knows the move failed
+        raise
+
+# === ARCHIVE FILE (SUCCESS) WITH MONTH-YEAR SUBDIR AND ZIPPING ===
+def archive_file(file_path, month_year):
+    """
+    Archives the processed file into a Month-Year subdirectory within ARCHIVE_DIR,
+    compressing it into a zip file.
+    """
+    if not month_year:
+        logging.error(f"Cannot archive '{os.path.basename(file_path)}': Month-Year is missing.")
+        raise ValueError("Month-Year is required for archiving.") # Raise error to trigger move to error dir
+
+    try:
+        # 1. Create Month-Year subdirectory if needed
+        month_year_dir = os.path.join(ARCHIVE_DIR, month_year)
+        os.makedirs(month_year_dir, exist_ok=True)
+
+        # 2. Define zip file path
+        base_name = os.path.basename(file_path)
+        name, _ = os.path.splitext(base_name)
+        zip_file_name = f"{name}.zip"
+        zip_file_path = os.path.join(month_year_dir, zip_file_name)
+
+        # 3. Create zip file and add the original PDF
+        with zipfile.ZipFile(zip_file_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            # Add the file using its base name (relative path within zip)
+            zipf.write(file_path, arcname=base_name) 
+            logging.info(f"Compressed '{base_name}' into '{zip_file_path}'")
+
+        # 4. Remove the original PDF file after successful zipping
+        os.remove(file_path)
+        logging.info(f"Removed original file: '{file_path}'")
+        return True # Indicate success
+
+    except Exception as e:
+        logging.error(f"Failed to archive and zip '{os.path.basename(file_path)}' to '{month_year_dir}': {e}")
+        # Do not remove the original file if zipping failed
+        return False # Indicate failure
 
 # === FILE STABILITY CHECK ===
 def is_file_stable(file_path, retries=3, delay=0.5):
@@ -810,37 +859,55 @@ def handle_file(file_path):
         return
 
     try:
-        success = process_pdf(file_path)
+        # process_pdf now returns (success_status, month_year)
+        success, month_year = process_pdf(file_path) 
+
         if success:
             try:
-                move_file(file_path, ARCHIVE_DIR)
-                logging.info(f"📦 Archived: {os.path.basename(file_path)}") # Log only basename
-            except Exception as move_err:
-                logging.error(f"Error moving processed file {file_path} to archive: {move_err}")
-                # Attempt to move to error dir as fallback
+                # Attempt to archive using the new function
+                archived_ok = archive_file(file_path, month_year)
+                if archived_ok:
+                     logging.info(f"📦 Successfully archived and zipped: {os.path.basename(file_path)} to {month_year} folder")
+                else:
+                    # archive_file failed (logged error inside), move original to error
+                    logging.warning(f"Archiving failed for {os.path.basename(file_path)}. Moving to error folder.")
+                    move_to_error(file_path, ERROR_DIR) # Use the renamed error function
+
+            except ValueError as ve: # Catch missing month_year error specifically
+                logging.error(f"Archiving error for {os.path.basename(file_path)}: {ve}. Moving to error folder.")
+                move_to_error(file_path, ERROR_DIR)
+            except Exception as archive_err:
+                # Catch any other unexpected error during archiving attempt
+                logging.error(f"Unexpected error during archiving {os.path.basename(file_path)}: {archive_err}")
+                # Attempt to move original to error dir as fallback
                 try:
-                    move_file(file_path, ERROR_DIR)
-                    logging.warning(f"Moved processed file to error folder due to archive error: {os.path.basename(file_path)}")
+                    # Check if file still exists before moving
+                    if os.path.exists(file_path):
+                        move_to_error(file_path, ERROR_DIR)
+                        logging.warning(f"Moved original file to error folder due to archive error: {os.path.basename(file_path)}")
+                    else:
+                        logging.warning(f"Original file {os.path.basename(file_path)} no longer exists after archive error.")
                 except Exception as fallback_move_err:
                      logging.error(f"Could not move file {file_path} to error folder after archive failure: {fallback_move_err}")
         else:
             # process_pdf returned False (error during extraction)
+            logging.warning(f"Processing failed for {os.path.basename(file_path)}. Moving to error folder.")
             try:
-                move_file(file_path, ERROR_DIR)
-                logging.warning(f"⚠️ Moved to error folder (processing error): {os.path.basename(file_path)}") # Log only basename
+                move_to_error(file_path, ERROR_DIR) # Use the renamed error function
             except Exception as move_err:
+                 # Log error if moving to error folder fails
                  logging.error(f"Could not move file {file_path} to error folder after processing error: {move_err}")
 
     except Exception as handle_err:
         logging.error(f"Unhandled error during handle_file for {file_path}: {handle_err}")
         logging.exception("Traceback for handle_file error:")
-        # Attempt to move to error dir if any unexpected error occurs
+        # Attempt to move to error dir if any unexpected error occurs in handle_file
         try:
             if os.path.exists(file_path): # Check again if it still exists
-                 move_file(file_path, ERROR_DIR)
-                 logging.warning(f"Moved file to error folder due to unhandled error: {os.path.basename(file_path)}")
+                 move_to_error(file_path, ERROR_DIR) # Use the renamed error function
+                 logging.warning(f"Moved file to error folder due to unhandled error in handle_file: {os.path.basename(file_path)}")
         except Exception as final_move_err:
-             logging.error(f"Could not move file {file_path} to error folder after unhandled error: {final_move_err}")
+             logging.error(f"Could not move file {file_path} to error folder after unhandled error in handle_file: {final_move_err}")
 
 
 # === PROCESS EXISTING FILES ===

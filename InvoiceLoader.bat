@@ -1,5 +1,5 @@
 @echo off
-cd /d C:\path\to\your\project
+cd /d D:\Irshad\Dev\Python\InvoiceDataExtractor
 
 :: Check if venv exists
 if exist "venv\Scripts\activate.bat" (
