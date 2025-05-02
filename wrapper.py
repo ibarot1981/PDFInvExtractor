@@ -22,7 +22,6 @@ GRIST_UPLOADER_SCRIPT = 'grist_uploader.py'
 LOG_FILE = os.getenv('WRAPPER_LOG_FILE', 'wrapper.log')
 
 # --- Setup Rotating Logging ---
-# --- Setup Rotating Logging ---
 LOG_FILE = os.getenv('WRAPPER_LOG_FILE', 'wrapper.log')
 LOG_MAX_BYTES = int(os.getenv('WRAPPER_LOG_MAX_BYTES', 5242880))  # Default 5MB if not set
 LOG_BACKUP_COUNT = int(os.getenv('WRAPPER_LOG_BACKUP_COUNT', 3))  # Default 3 files if not set

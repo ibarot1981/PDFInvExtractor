@@ -289,19 +289,37 @@ def get_invoice_number_from_csv(csv_path, invoice_col_label):
 # --- Processing Functions ---
 
 def setup_logging(log_file):
-    """Sets up logging to file."""
+    """Sets up logging to file and console based on LOGGING_LEVEL in .env."""
+    # --- Get Logging Level from .env ---
+    LOGGING_LEVEL_MAP = {
+        'DEBUG': logging.DEBUG,
+        'INFO': logging.INFO,
+        'WARNING': logging.WARNING,
+        'ERROR': logging.ERROR,
+        'CRITICAL': logging.CRITICAL
+    }
+    log_level_str = os.getenv('LOGGING_LEVEL', 'ERROR').upper() # Default to ERROR for uploader
+    log_level = LOGGING_LEVEL_MAP.get(log_level_str, logging.ERROR)
+    print(f"Setting Grist Uploader log level to: {log_level_str} ({log_level})") # Info print
+
     logging.basicConfig(
-        level=logging.ERROR,
+        level=log_level, # Use level from .env
         format='%(asctime)s - %(levelname)s - %(message)s',
         filename=log_file,
         filemode='a' # Append to the log file
     )
-    # Also add a handler to print errors to console
+    # Also add a handler to print to console, using the same level
     console_handler = logging.StreamHandler()
-    console_handler.setLevel(logging.ERROR)
+    console_handler.setLevel(log_level) # Use level from .env
     formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
     console_handler.setFormatter(formatter)
-    logging.getLogger('').addHandler(console_handler)
+    # Make sure not to add duplicate handlers if script is re-run in some way
+    root_logger = logging.getLogger('')
+    # Remove existing StreamHandlers if any before adding new one
+    for handler in root_logger.handlers[:]:
+        if isinstance(handler, logging.StreamHandler):
+            root_logger.removeHandler(handler)
+    root_logger.addHandler(console_handler)
 
 
 def upload_csv_to_grist(csv_file_path, table_id, uploader, grist_columns_data):

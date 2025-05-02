@@ -23,6 +23,20 @@ LOG_FILE = os.getenv('CLAUDE_LOG_FILE', 'claude_extractor.log')
 LOG_MAX_BYTES = int(os.getenv('CLAUDE_LOG_MAX_BYTES', 5242880))  # Default 5MB
 LOG_BACKUP_COUNT = int(os.getenv('CLAUDE_LOG_BACKUP_COUNT', 3))  # Default 3 backups
 
+# --- Get Logging Level from .env ---
+# Map string level names to logging constants
+LOGGING_LEVEL_MAP = {
+    'DEBUG': logging.DEBUG,
+    'INFO': logging.INFO,
+    'WARNING': logging.WARNING,
+    'ERROR': logging.ERROR,
+    'CRITICAL': logging.CRITICAL
+}
+# Get level string from env, default to 'INFO'
+log_level_str = os.getenv('LOGGING_LEVEL', 'INFO').upper()
+# Get the corresponding logging constant, default to INFO if invalid
+log_level = LOGGING_LEVEL_MAP.get(log_level_str, logging.INFO)
+
 file_handler = RotatingFileHandler(
     LOG_FILE,
     maxBytes=LOG_MAX_BYTES,
@@ -35,7 +49,7 @@ console_handler = logging.StreamHandler(sys.stdout)
 console_handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
 
 logging.basicConfig(
-    level=logging.INFO,
+    level=log_level, # Use level from .env
     handlers=[file_handler, console_handler]
 )
 
@@ -89,13 +103,7 @@ def extract_header_from_pdf(file_path):
         'place_of_supply': '',
         'destination': ''
     }
-    
-    # Log raw content for debugging if needed (set level to DEBUG)
-    # logging.debug("\n--- Raw PDF Content ---")
-    # for i, line in enumerate(lines):
-    #     logging.debug(f"Line {i}: {line}")
-    # logging.debug("----------------------\n")
-    
+        
     # Find invoice number
     invoice_line_idx = None
     for idx, line in enumerate(lines):
@@ -877,70 +885,89 @@ def is_file_stable(file_path, retries=3, delay=0.5):
 # === HANDLE FILE ===
 def handle_file(file_path):
     """Processes a single PDF file after checking stability."""
+    base_name = os.path.basename(file_path) # Get basename for logging
+    logging.info(f"  [handle_file] Starting processing for: {base_name}")
+
     if not os.path.exists(file_path):
-        logging.warning(f"File disappeared before handling: {file_path}")
+        logging.warning(f"  [handle_file] File disappeared before handling: {base_name}")
         return
 
+    logging.info(f"  [handle_file] Checking stability for: {base_name}")
     if not is_file_stable(file_path):
-        logging.warning(f"Skipping unstable or empty file: {file_path}")
+        logging.warning(f"  [handle_file] Skipping unstable or empty file: {base_name}")
         # Optionally move unstable files to error dir immediately
         # try:
         #     move_file(file_path, ERROR_DIR)
         #     logging.warning(f"Moved unstable file to error folder: {file_path}")
         # except Exception as move_err:
-        #     logging.error(f"Could not move unstable file {file_path} to error folder: {move_err}")
+        #     logging.error(f"Could not move unstable file {base_name} to error folder: {move_err}")
         return
+    logging.info(f"  [handle_file] File is stable: {base_name}")
 
     try:
+        logging.info(f"    [handle_file] --> Calling process_pdf for: {base_name}")
         # process_pdf now returns (success_status, month_year)
-        success, month_year = process_pdf(file_path) 
+        success, month_year = process_pdf(file_path)
+        logging.info(f"    [handle_file] <-- process_pdf finished for: {base_name}. Success: {success}")
 
         if success:
+            logging.info(f"    [handle_file] --> Attempting to archive successful file: {base_name}")
             try:
                 # Attempt to archive using the new function
                 archived_ok = archive_file(file_path, month_year)
+                logging.info(f"    [handle_file] <-- Archive attempt finished for: {base_name}. Archived OK: {archived_ok}")
                 if archived_ok:
-                     logging.info(f"📦 Successfully archived and zipped: {os.path.basename(file_path)} to {month_year} folder")
+                     logging.info(f"      [handle_file] 📦 Successfully archived and zipped: {base_name} to {month_year} folder")
                 else:
                     # archive_file failed (logged error inside), move original to error
-                    logging.warning(f"Archiving failed for {os.path.basename(file_path)}. Moving to error folder.")
+                    logging.warning(f"      [handle_file] Archiving failed for {base_name}. Moving to error folder.")
+                    logging.info(f"      [handle_file] --> Moving failed archive file to error: {base_name}")
                     move_to_error(file_path, ERROR_DIR) # Use the renamed error function
+                    logging.info(f"      [handle_file] <-- Finished moving failed archive file to error: {base_name}")
 
             except ValueError as ve: # Catch missing month_year error specifically
-                logging.error(f"Archiving error for {os.path.basename(file_path)}: {ve}. Moving to error folder.")
+                logging.error(f"    [handle_file] Archiving error (ValueError) for {base_name}: {ve}. Moving to error folder.")
+                logging.info(f"    [handle_file] --> Moving file to error due to ValueError: {base_name}")
                 move_to_error(file_path, ERROR_DIR)
+                logging.info(f"    [handle_file] <-- Finished moving file to error due to ValueError: {base_name}")
             except Exception as archive_err:
                 # Catch any other unexpected error during archiving attempt
-                logging.error(f"Unexpected error during archiving {os.path.basename(file_path)}: {archive_err}")
+                logging.error(f"    [handle_file] Unexpected error during archiving {base_name}: {archive_err}")
                 # Attempt to move original to error dir as fallback
                 try:
                     # Check if file still exists before moving
                     if os.path.exists(file_path):
+                        logging.info(f"    [handle_file] --> Moving file to error due to archive exception: {base_name}")
                         move_to_error(file_path, ERROR_DIR)
-                        logging.warning(f"Moved original file to error folder due to archive error: {os.path.basename(file_path)}")
+                        logging.info(f"    [handle_file] <-- Finished moving file to error due to archive exception: {base_name}")
+                        logging.warning(f"      [handle_file] Moved original file to error folder due to archive error: {base_name}") # Kept original warning
                     else:
-                        logging.warning(f"Original file {os.path.basename(file_path)} no longer exists after archive error.")
+                        logging.warning(f"      [handle_file] Original file {base_name} no longer exists after archive error.")
                 except Exception as fallback_move_err:
-                     logging.error(f"Could not move file {file_path} to error folder after archive failure: {fallback_move_err}")
+                     logging.error(f"      [handle_file] Could not move file {base_name} to error folder after archive failure: {fallback_move_err}")
         else:
             # process_pdf returned False (error during extraction)
-            logging.warning(f"Processing failed for {os.path.basename(file_path)}. Moving to error folder.")
+            logging.warning(f"    [handle_file] Processing failed for {base_name}. Moving to error folder.")
             try:
+                logging.info(f"    [handle_file] --> Moving failed processing file to error: {base_name}")
                 move_to_error(file_path, ERROR_DIR) # Use the renamed error function
+                logging.info(f"    [handle_file] <-- Finished moving failed processing file to error: {base_name}")
             except Exception as move_err:
                  # Log error if moving to error folder fails
-                 logging.error(f"Could not move file {file_path} to error folder after processing error: {move_err}")
+                 logging.error(f"      [handle_file] Could not move file {base_name} to error folder after processing error: {move_err}")
 
     except Exception as handle_err:
-        logging.error(f"Unhandled error during handle_file for {file_path}: {handle_err}")
-        logging.exception("Traceback for handle_file error:")
+        logging.error(f"  [handle_file] MAJOR UNHANDLED error during handle_file for {base_name}: {handle_err}") # Emphasized log
+        logging.exception("  [handle_file] Traceback for handle_file error:")
         # Attempt to move to error dir if any unexpected error occurs in handle_file
         try:
             if os.path.exists(file_path): # Check again if it still exists
                  move_to_error(file_path, ERROR_DIR) # Use the renamed error function
-                 logging.warning(f"Moved file to error folder due to unhandled error in handle_file: {os.path.basename(file_path)}")
+                 logging.warning(f"  [handle_file] Moved file to error folder due to unhandled error in handle_file: {base_name}")
         except Exception as final_move_err:
-             logging.error(f"Could not move file {file_path} to error folder after unhandled error in handle_file: {final_move_err}")
+             logging.error(f"  [handle_file] Could not move file {base_name} to error folder after unhandled error in handle_file: {final_move_err}")
+
+    logging.info(f"  [handle_file] Finished processing for: {base_name}")
 
 
 # === PROCESS EXISTING FILES ===
@@ -969,10 +996,47 @@ class PDFHandler(FileSystemEventHandler):
     def on_created(self, event):
         # Only process files, not directories
         if not event.is_directory and event.src_path.lower().endswith('.pdf'):
-            logging.info(f"🔔 New file detected: {event.src_path}")
-            
-            # The stability check is now inside handle_file
-            handle_file(event.src_path)
+            file_path = event.src_path
+            logging.info(f"🔔 [Watcher] New file detected: {file_path}") # Added Watcher prefix
+            try:
+                logging.info(f"  [Watcher] Calling handle_file for: {os.path.basename(file_path)}")
+                # The stability check is now inside handle_file
+                handle_file(file_path)
+                logging.info(f"  [Watcher] Finished handle_file for: {os.path.basename(file_path)}")
+            except Exception as e:
+                # Catch ANY exception escaping handle_file to prevent observer thread death
+                logging.error(f"💥 UNHANDLED EXCEPTION in PDFHandler for file: {file_path} - Error: {e}")
+                logging.exception("Traceback for PDFHandler unhandled exception:")
+                # Optionally, try to move the file to error dir as a last resort
+                try:
+                    if os.path.exists(file_path):
+                        move_to_error(file_path, ERROR_DIR)
+                        logging.warning(f"Moved {os.path.basename(file_path)} to error folder after PDFHandler exception.")
+                except Exception as move_err:
+                    logging.error(f"Failed to move {os.path.basename(file_path)} to error folder after PDFHandler exception: {move_err}")
+
+    def on_moved(self, event):
+        # Handle file rename events (like Syncthing's temp -> final)
+        if not event.is_directory and event.dest_path.lower().endswith('.pdf'):
+            file_path = event.dest_path
+            logging.info(f"🔔 [Watcher] File moved/renamed to PDF: {file_path}") # Added Watcher prefix
+            try:
+                logging.info(f"  [Watcher] Calling handle_file for moved file: {os.path.basename(file_path)}")
+                # The stability check is now inside handle_file
+                handle_file(file_path)
+                logging.info(f"  [Watcher] Finished handle_file for moved file: {os.path.basename(file_path)}")
+            except Exception as e:
+                # Catch ANY exception escaping handle_file to prevent observer thread death
+                logging.error(f"💥 UNHANDLED EXCEPTION in PDFHandler (on_moved) for file: {file_path} - Error: {e}")
+                logging.exception("Traceback for PDFHandler (on_moved) unhandled exception:")
+                # Optionally, try to move the file to error dir as a last resort
+                try:
+                    if os.path.exists(file_path):
+                        move_to_error(file_path, ERROR_DIR)
+                        logging.warning(f"Moved {os.path.basename(file_path)} to error folder after PDFHandler (on_moved) exception.")
+                except Exception as move_err:
+                    logging.error(f"Failed to move {os.path.basename(file_path)} to error folder after PDFHandler (on_moved) exception: {move_err}")
+
 
 # === SIGNAL HANDLER FOR GRACEFUL EXIT ===
 def signal_handler(sig, frame):
@@ -1013,8 +1077,14 @@ if __name__ == "__main__":
     
     try:
         # Keep the main thread alive
+        loop_counter = 0
         while True:
+            # Log main loop activity and observer status periodically
+            if loop_counter % 60 == 0: # Log every 60 seconds
+                observer_alive = observer.is_alive() if observer else False
+                logging.info(f"[Main Loop] Still running... Observer alive: {observer_alive}")
             time.sleep(1)
+            loop_counter += 1
     except KeyboardInterrupt:
         # This is a backup in case the signal handler doesn't catch it
         logging.info("\n🛑 Stopping PDF invoice monitoring (KeyboardInterrupt)")
