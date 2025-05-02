@@ -58,6 +58,18 @@ def extract_header_from_pdf(file_path):
         text = pdf.pages[0].extract_text()
         lines = text.splitlines()
     
+    # === Preprocess lines: fix merged E-Way Bill No + Date like 12345678901225-Mar-24 ===
+    fixed_lines = []
+    for line in lines:
+        merged_match = re.search(r'(\d{12})(\d{1,2}-[A-Za-z]{3}-\d{2})', line)
+        if merged_match:
+            fixed_line = line.replace(merged_match.group(0), f"{merged_match.group(1)} {merged_match.group(2)}")
+            logging.debug(f"[Fix] Merged EWB+Date: {line} → {fixed_line}")
+            fixed_lines.append(fixed_line)
+        else:
+            fixed_lines.append(line)
+    lines = fixed_lines  # Replace original lines
+
     header_data = {
         'file_name': file_name,  # Added filename as the first field
         'invoice_number': '',
@@ -116,17 +128,38 @@ def extract_header_from_pdf(file_path):
                     logging.debug(f"Found date via 'Dated' pattern: {header_data['invoice_date']}")
                     break
     
-    # Approach 2: If above fails, look for date pattern anywhere near relevant fields
+    # Special Case: Handle merged E-Way Bill No + Date (e.g., "12345678901225-Mar-24")
     if not header_data['invoice_date']:
-        for idx, line in enumerate(lines):
-            # Look for date pattern in the line
-            date_match = re.search(r'(\d{1,2}-[A-Za-z]{3}-\d{2})', line)
-            if date_match and not line.startswith('Ack Date'):  # Avoid Ack Date
-                # Make sure it's not part of the acknowledgment date
-                if 'Ack Date' not in line:
-                    header_data['invoice_date'] = date_match.group(1)
-                    logging.debug(f"Found date via general pattern: {header_data['invoice_date']}")
-                    break
+        for line in lines:
+            merged_match = re.search(r'(\d{12})(\d{1,2}-[A-Za-z]{3}-\d{2})', line)
+            if merged_match:
+                eway_no, date_str = merged_match.groups()
+                logging.debug(f"Detected merged E-Way Bill and Date: {eway_no} + {date_str}")
+                header_data['invoice_date'] = date_str
+                break
+
+    # === Custom fix: remove E-Way Bill + Date merges ===
+    if not header_data['invoice_date']:
+        cleaned_lines = []
+        for line in lines:
+            # Fix merged 12-digit E-Way Bill + Date (e.g., 12345678901225-Mar-24)
+            merged_match = re.search(r'(\d{12})(\d{1,2}-[A-Za-z]{3}-\d{2})', line)
+            if merged_match:
+                fixed_line = line.replace(merged_match.group(0), f"{merged_match.group(1)} {merged_match.group(2)}")
+                logging.debug(f"Fixed merged line: {line} -> {fixed_line}")
+                cleaned_lines.append(fixed_line)
+            else:
+                cleaned_lines.append(line)
+
+        # Now search for date in cleaned lines
+        for idx, line in enumerate(cleaned_lines):
+            if 'eway' in line.lower():
+                continue
+            date_match = re.search(r'\b(\d{1,2}-[A-Za-z]{3}-\d{2})\b', line)
+            if date_match and 'Ack Date' not in line:
+                header_data['invoice_date'] = date_match.group(1).strip()
+                logging.debug(f"Found date after cleaning merged E-Way Bill: {header_data['invoice_date']}")
+                break
     
     # Approach 3: Look specifically near bill of lading
     if not header_data['invoice_date']:
