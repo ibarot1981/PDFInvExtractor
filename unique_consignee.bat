@@ -1,0 +1,1 @@
+python grist_extract_tmp.py --server http://safcost.duckdns.org:8484 --doc gi1sPNycQAHoMTekxE6QN3 --table InvoiceMaster --field Consignee_Name --api-key 7a377f3f2d53207dc917c86030503e7cd3311686 --output unique_consignee.csv
